@@ -87,15 +87,9 @@ struct NewRaceSetupView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button(action: {
+                    Button("Back") {
                         dismiss()
-                    }) {
-                        HStack {
-                            Image(systemName: "chevron.left")
-                            Text("Back")
-                        }
                     }
-                    .buttonStyle(BorderlessButtonStyle())
                 }
             }
         }
