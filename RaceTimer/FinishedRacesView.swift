@@ -52,7 +52,7 @@ struct FinishedRacesView: View {
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Done") {
+                    Button("Back") {
                         dismiss()
                     }
                 }
