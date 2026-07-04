@@ -5,12 +5,10 @@ struct RaceTimingView: View {
     @EnvironmentObject var raceManager: RaceManager
     @Environment(\.dismiss) private var dismiss
     
-    @State private var currentRunnerIndex = 0
     @State private var showingFinishAlert = false
-    @State private var showingSaveAlert = false
     @State private var elapsedTime: TimeInterval = 0
     @State private var timer: Timer?
-    @State private var isValidationComplete = false
+    @State private var isRaceFinished = false
     @State private var tempRunners: [Runner] = []
     
     private var currentRace: Race? {
@@ -18,25 +16,19 @@ struct RaceTimingView: View {
     }
     
     private var allRunnersHaveFinishTimes: Bool {
-        return tempRunners.allSatisfy { $0.finishTime != nil }
+        tempRunners.allSatisfy { $0.finishTime != nil }
     }
     
     private var sortedRunners: [Runner] {
-        if isValidationComplete {
+        if isRaceFinished {
             return tempRunners.sorted { ($0.finishTime ?? Date.distantFuture) < ($1.finishTime ?? Date.distantFuture) }
-        } else {
-            return tempRunners
         }
-    }
-    
-    private var assignedRunners: [Runner] {
-        currentRace?.runners ?? []
+        return tempRunners
     }
     
     var body: some View {
         NavigationView {
             VStack(spacing: 0) {
-                // Header
                 VStack(spacing: 8) {
                     Text(currentRace?.name ?? "Race")
                         .font(.title2)
@@ -63,7 +55,6 @@ struct RaceTimingView: View {
                 .padding()
                 .background(Color(.systemGray6))
                 
-                // Table Header
                 HStack {
                     Text("Place")
                         .font(.headline)
@@ -73,24 +64,20 @@ struct RaceTimingView: View {
                         .frame(maxWidth: .infinity, alignment: .center)
                     Text("Runner No.")
                         .font(.headline)
-                        .frame(width: 80, alignment: .center)
-                    Text("Runner Name")
-                        .font(.headline)
-                        .frame(maxWidth: .infinity, alignment: .center)
+                        .frame(width: 100, alignment: .center)
                 }
                 .padding(.vertical, 8)
                 .background(Color(.systemGray5))
                 
-                // Scrollable Content
                 ScrollView {
                     LazyVStack(spacing: 0) {
                         ForEach(sortedRunners.indices, id: \.self) { index in
                             let runner = sortedRunners[index]
                             RunnerRowView(
-                                runner: runner, 
-                                index: index, 
+                                runner: runner,
+                                index: index,
                                 raceStartTime: raceManager.raceStartTime,
-                                isValidationComplete: isValidationComplete
+                                isRaceFinished: isRaceFinished
                             ) { newNumber in
                                 if let tempIndex = tempRunners.firstIndex(where: { $0.id == runner.id }) {
                                     tempRunners[tempIndex].runnerNumber = newNumber
@@ -100,7 +87,6 @@ struct RaceTimingView: View {
                     }
                 }
                 
-                // Fixed Bottom Controls
                 VStack(spacing: 16) {
                     if !raceManager.isRaceStarted {
                         Button(action: {
@@ -122,7 +108,6 @@ struct RaceTimingView: View {
                         .padding(.horizontal, 20)
                     }
                     
-                    // Record Time Button
                     Button(action: recordTime) {
                         HStack {
                             Image(systemName: "stopwatch.fill")
@@ -139,8 +124,7 @@ struct RaceTimingView: View {
                     .disabled(allRunnersHaveFinishTimes || !raceManager.isRaceStarted)
                     .padding(.horizontal, 20)
                     
-                    // Finish Race Button
-                    if !isValidationComplete {
+                    if !isRaceFinished {
                         Button(action: {
                             showingFinishAlert = true
                         }) {
@@ -157,12 +141,10 @@ struct RaceTimingView: View {
                         }
                         .buttonStyle(BorderlessButtonStyle())
                         .padding(.horizontal, 20)
-                    }
-                    
-                    // Save Report Button
-                    if isValidationComplete {
+                    } else {
                         Button(action: {
-                            showingSaveAlert = true
+                            raceFinished = true
+                            dismiss()
                         }) {
                             HStack {
                                 Image(systemName: "square.and.arrow.down")
@@ -196,23 +178,15 @@ struct RaceTimingView: View {
         .navigationViewStyle(.stack)
         .alert("Finish Race", isPresented: $showingFinishAlert) {
             Button("Cancel", role: .cancel) { }
-            Button("Validate & Finish", role: .destructive) {
-                validateAndFinishRace()
+            Button("Finish", role: .destructive) {
+                finishRace()
             }
         } message: {
-            Text("This will validate race numbers against assigned racers and auto-fill names. Continue?")
-        }
-        .alert("Save Report", isPresented: $showingSaveAlert) {
-            Button("Cancel", role: .cancel) { }
-            Button("Save", role: .destructive) {
-                saveRaceReport()
-            }
-        } message: {
-            Text("Save this race report to finished races?")
+            Text("Save race results with entered runner numbers?")
         }
         .onAppear(perform: setupView)
         .onDisappear(perform: stopTimer)
-        .onChange(of: allRunnersHaveFinishTimes) { oldValue, newValue in
+        .onChange(of: allRunnersHaveFinishTimes) { _, newValue in
             if newValue && raceManager.isRaceStarted {
                 stopTimer()
             }
@@ -224,7 +198,6 @@ struct RaceTimingView: View {
         
         for (index, runner) in tempRunners.enumerated() {
             if runner.finishTime == nil {
-                // Record the time directly in tempRunners
                 let elapsedTime = Date().timeIntervalSince(raceManager.raceStartTime!)
                 tempRunners[index].finishTime = raceManager.raceStartTime!.addingTimeInterval(elapsedTime)
                 break
@@ -233,14 +206,8 @@ struct RaceTimingView: View {
     }
     
     private func setupView() {
-        // Initialize tempRunners with empty names and numbers
         if let race = currentRace {
-            tempRunners = race.runners.map { runner in
-                var tempRunner = runner
-                tempRunner.runnerName = ""  // Clear name - will be filled after validation
-                tempRunner.runnerNumber = ""  // Clear number - user will enter this
-                return tempRunner
-            }
+            tempRunners = race.runners
         }
         
         if raceManager.isRaceStarted {
@@ -248,41 +215,14 @@ struct RaceTimingView: View {
         }
     }
     
-    private func validateAndFinishRace() {
-        print("=== SIMPLE VALIDATION ===")
-        print("Original race runners: \(assignedRunners.map { "\($0.runnerNumber): \($0.runnerName)" })")
-        print("Temp runners before validation: \(tempRunners.map { "\($0.runnerNumber): \($0.runnerName) - finishTime: \($0.finishTime != nil)" })")
-        
-        // Simple approach: Only update names based on entered numbers, preserve everything else
-        for (index, tempRunner) in tempRunners.enumerated() {
-            if let assignedRunner = assignedRunners.first(where: { $0.runnerNumber == tempRunner.runnerNumber }) {
-                // Match found - only update the name
-                tempRunners[index].runnerName = assignedRunner.runnerName
-                print("Updated name for number \(tempRunner.runnerNumber): \(assignedRunner.runnerName)")
-            } else {
-                // No match found - set unknown
-                tempRunners[index].runnerName = "Unknown Runner"
-                print("No match for number \(tempRunner.runnerNumber), set to Unknown Runner")
-            }
-        }
-        
-        print("Temp runners after validation: \(tempRunners.map { "\($0.runnerNumber): \($0.runnerName) - finishTime: \($0.finishTime != nil)" })")
-        
-        // Update the race manager with validated runners
+    private func finishRace() {
         if var race = currentRace {
             race.runners = tempRunners
             raceManager.currentRace = race
         }
         
-        isValidationComplete = true
+        isRaceFinished = true
         raceManager.finishRace()
-    }
-    
-    private func saveRaceReport() {
-        // The race is already saved in finishRace() method
-        // Just dismiss the view
-        raceFinished = true
-        dismiss()
     }
     
     private func startTimer() {
@@ -311,19 +251,17 @@ struct RunnerRowView: View {
     let runner: Runner
     let index: Int
     let raceStartTime: Date?
-    let isValidationComplete: Bool
+    let isRaceFinished: Bool
     let onNumberChange: (String) -> Void
     @State private var runnerNumber: String
-    @State private var runnerName: String
     
-    init(runner: Runner, index: Int, raceStartTime: Date?, isValidationComplete: Bool, onNumberChange: @escaping (String) -> Void) {
+    init(runner: Runner, index: Int, raceStartTime: Date?, isRaceFinished: Bool, onNumberChange: @escaping (String) -> Void) {
         self.runner = runner
         self.index = index
         self.raceStartTime = raceStartTime
-        self.isValidationComplete = isValidationComplete
+        self.isRaceFinished = isRaceFinished
         self.onNumberChange = onNumberChange
         _runnerNumber = State(initialValue: runner.runnerNumber)
-        _runnerName = State(initialValue: runner.runnerName)
     }
     
     private var displayTime: String {
@@ -342,7 +280,6 @@ struct RunnerRowView: View {
             Text("\(index + 1)")
                 .frame(width: 60, alignment: .center)
                 .font(.body)
-                .foregroundColor(.primary)
             
             Text(displayTime)
                 .frame(maxWidth: .infinity, alignment: .center)
@@ -350,31 +287,21 @@ struct RunnerRowView: View {
                 .foregroundColor(.secondary)
             
             TextField("No.", text: $runnerNumber)
-                .frame(width: 80, alignment: .center)
+                .frame(width: 100, alignment: .center)
                 .textFieldStyle(RoundedBorderTextFieldStyle())
                 .keyboardType(.numberPad)
                 .multilineTextAlignment(.center)
-                .disabled(isValidationComplete)
-                .onChange(of: runnerNumber) { oldValue, newValue in
+                .disabled(isRaceFinished)
+                .onChange(of: runnerNumber) { _, newValue in
                     onNumberChange(newValue)
                 }
-            
-            Text(runnerName.isEmpty ? "Enter number above" : runnerName)
-                .frame(maxWidth: .infinity, alignment: .center)
-                .font(.body)
-                .foregroundColor(runnerName.isEmpty ? .secondary : .primary)
-                .multilineTextAlignment(.center)
         }
         .padding(.vertical, 5)
         .onAppear {
             runnerNumber = runner.runnerNumber
-            runnerName = runner.runnerName
         }
-        .onChange(of: runner.runnerNumber) { newValue in
+        .onChange(of: runner.runnerNumber) { _, newValue in
             runnerNumber = newValue
-        }
-        .onChange(of: runner.runnerName) { newValue in
-            runnerName = newValue
         }
     }
 }

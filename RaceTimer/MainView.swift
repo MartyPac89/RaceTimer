@@ -9,11 +9,8 @@ import SwiftUI
 
 struct MainView: View {
     @StateObject private var raceManager = RaceManager()
-    @StateObject private var registrationManager = RegistrationManager()
     @State private var showingNewRace = false
     @State private var showingFinishedRaces = false
-    @State private var showingNewRegistration = false
-    @State private var showingRegistrationList = false
     
     var body: some View {
         ZStack {
@@ -33,7 +30,6 @@ struct MainView: View {
             VStack {
                 HStack {
                     Spacer()
-                    // Running silhouette
                     Image(systemName: "figure.run")
                         .font(.system(size: 60))
                         .foregroundColor(.white.opacity(0.1))
@@ -44,7 +40,6 @@ struct MainView: View {
                 Spacer()
                 
                 HStack {
-                    // Cycling silhouette
                     Image(systemName: "figure.outdoor.cycle")
                         .font(.system(size: 50))
                         .foregroundColor(.white.opacity(0.08))
@@ -53,7 +48,6 @@ struct MainView: View {
                     
                     Spacer()
                     
-                    // Swimming silhouette
                     Image(systemName: "figure.pool.swim")
                         .font(.system(size: 45))
                         .foregroundColor(.white.opacity(0.06))
@@ -65,7 +59,6 @@ struct MainView: View {
                 
                 HStack {
                     Spacer()
-                    // Additional running silhouette
                     Image(systemName: "figure.run")
                         .font(.system(size: 40))
                         .foregroundColor(.white.opacity(0.05))
@@ -75,11 +68,9 @@ struct MainView: View {
             }
             .ignoresSafeArea()
             
-            // Main Content
             VStack(spacing: 40) {
                 Spacer()
                 
-                // App Title
                 VStack(spacing: 10) {
                     Image(systemName: "stopwatch")
                         .font(.system(size: 80))
@@ -100,7 +91,6 @@ struct MainView: View {
                 
                 Spacer()
                 
-                // Main Buttons
                 VStack(spacing: 20) {
                     Button(action: {
                         showingNewRace = true
@@ -115,52 +105,6 @@ struct MainView: View {
                         .background(
                             LinearGradient(
                                 gradient: Gradient(colors: [Color.blue, Color.blue.opacity(0.8)]),
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                        )
-                        .foregroundColor(.white)
-                        .cornerRadius(12)
-                        .shadow(color: .black.opacity(0.3), radius: 8, x: 0, y: 4)
-                    }
-                    .buttonStyle(BorderlessButtonStyle())
-                    
-                    Button(action: {
-                        showingNewRegistration = true
-                    }) {
-                        HStack {
-                            Image(systemName: "person.badge.plus")
-                            Text("NEW REGISTRATION")
-                                .fontWeight(.semibold)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(
-                            LinearGradient(
-                                gradient: Gradient(colors: [Color.orange, Color.orange.opacity(0.8)]),
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                        )
-                        .foregroundColor(.white)
-                        .cornerRadius(12)
-                        .shadow(color: .black.opacity(0.3), radius: 8, x: 0, y: 4)
-                    }
-                    .buttonStyle(BorderlessButtonStyle())
-                    
-                    Button(action: {
-                        showingRegistrationList = true
-                    }) {
-                        HStack {
-                            Image(systemName: "person.3")
-                            Text("REGISTRATION LIST")
-                                .fontWeight(.semibold)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(
-                            LinearGradient(
-                                gradient: Gradient(colors: [Color.purple, Color.purple.opacity(0.8)]),
                                 startPoint: .top,
                                 endPoint: .bottom
                             )
@@ -201,19 +145,9 @@ struct MainView: View {
             .padding()
         }
         .environmentObject(raceManager)
-        .environmentObject(registrationManager)
         .fullScreenCover(isPresented: $showingNewRace) {
             NewRaceSetupView()
                 .environmentObject(raceManager)
-                .environmentObject(registrationManager)
-        }
-        .fullScreenCover(isPresented: $showingNewRegistration) {
-            NewRunnerRegistrationView()
-                .environmentObject(registrationManager)
-        }
-        .fullScreenCover(isPresented: $showingRegistrationList) {
-            RegistrationListView()
-                .environmentObject(registrationManager)
         }
         .fullScreenCover(isPresented: $showingFinishedRaces) {
             FinishedRacesView()

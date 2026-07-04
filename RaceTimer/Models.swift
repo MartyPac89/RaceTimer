@@ -53,20 +53,3 @@ struct Race: Identifiable, Codable {
         }
     }
 }
-
-struct RunnerRegistration: Identifiable, Codable {
-    var id = UUID()
-    var name: String
-    var age: Int
-    var gender: String
-    var startingNumber: String
-    var dateRegistered: Date
-    
-    init(name: String = "", age: Int = 0, gender: String = "", startingNumber: String = "") {
-        self.name = name
-        self.age = age
-        self.gender = gender
-        self.startingNumber = startingNumber
-        self.dateRegistered = Date()
-    }
-}
