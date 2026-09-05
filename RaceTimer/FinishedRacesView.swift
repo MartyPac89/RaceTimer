@@ -548,20 +548,32 @@ struct RaceDetailView: View {
     private func exportRace(as format: ExportFormat) {
         guard let currentRace else { return }
         
+        let exportFilter: RaceManager.ExportListFilter
+        switch selectedListKind {
+        case .all: exportFilter = .all
+        case .women: exportFilter = .women
+        case .men: exportFilter = .men
+        }
+        
         let safeName = currentRace.name
             .replacingOccurrences(of: "/", with: "-")
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        let fileName = safeName.isEmpty ? "RaceReport" : safeName
+        var fileName = safeName.isEmpty ? "RaceReport" : safeName
+        switch selectedListKind {
+        case .all: break
+        case .women: fileName += "-Women"
+        case .men: fileName += "-Men"
+        }
         
         let data: Data?
         let fileExtension: String
         
         switch format {
         case .pdf:
-            data = raceManager.generatePDF(for: currentRace)
+            data = raceManager.generatePDF(for: currentRace, filter: exportFilter)
             fileExtension = "pdf"
         case .jpeg:
-            data = raceManager.generateJPEG(for: currentRace)
+            data = raceManager.generateJPEG(for: currentRace, filter: exportFilter)
             fileExtension = "jpg"
         }
         

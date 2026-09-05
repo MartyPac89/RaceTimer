@@ -168,7 +168,30 @@ class RaceManager: ObservableObject {
         saveRaces()
     }
     
-    func generatePDF(for race: Race) -> Data? {
+    enum ExportListFilter {
+        case all
+        case women
+        case men
+        
+        func filteredRunners(from race: Race) -> [Runner] {
+            let sorted = race.sortedRunners
+            switch self {
+            case .all: return sorted
+            case .women: return sorted.filter { $0.gender == .F }
+            case .men: return sorted.filter { $0.gender == .M }
+            }
+        }
+        
+        var resultsSectionTitle: String {
+            switch self {
+            case .all: return "Kompletní výsledky"
+            case .women: return "Výsledky žen"
+            case .men: return "Výsledky mužů"
+            }
+        }
+    }
+    
+    func generatePDF(for race: Race, filter: ExportListFilter = .all) -> Data? {
         let pdfMetaData = [
             kCGPDFContextCreator: "RaceTimer",
             kCGPDFContextAuthor: "RaceTimer App",
@@ -183,15 +206,15 @@ class RaceManager: ObservableObject {
         
         return renderer.pdfData { context in
             context.beginPage()
-            drawRaceReport(race: race, in: pageRect, fillBackground: false)
+            drawRaceReport(race: race, filter: filter, in: pageRect, fillBackground: false)
         }
     }
     
-    func generateJPEG(for race: Race) -> Data? {
+    func generateJPEG(for race: Race, filter: ExportListFilter = .all) -> Data? {
         let pageRect = Self.reportPageRect
         let renderer = UIGraphicsImageRenderer(size: pageRect.size)
         let image = renderer.image { _ in
-            drawRaceReport(race: race, in: pageRect, fillBackground: true)
+            drawRaceReport(race: race, filter: filter, in: pageRect, fillBackground: true)
         }
         return image.jpegData(compressionQuality: 0.92)
     }
@@ -213,11 +236,16 @@ class RaceManager: ObservableObject {
         static let muted = UIColor(red: 0.35, green: 0.40, blue: 0.45, alpha: 1)
     }
     
-    private func drawRaceReport(race: Race, in pageRect: CGRect, fillBackground: Bool) {
+    private func drawRaceReport(
+        race: Race,
+        filter: ExportListFilter,
+        in pageRect: CGRect,
+        fillBackground: Bool
+    ) {
         let pageWidth = pageRect.width
         let margin: CGFloat = 36
         let contentWidth = pageWidth - margin * 2
-        let sortedRunners = race.sortedRunners
+        let sortedRunners = filter.filteredRunners(from: race)
         
         if fillBackground {
             UIColor.white.setFill()
@@ -250,17 +278,18 @@ class RaceManager: ObservableObject {
             race: race,
             margin: margin,
             contentWidth: contentWidth,
-            startY: cursorY + 10
+            startY: cursorY + 8
         )
         
         // MARK: Results table
         cursorY = drawResultsTable(
             runners: sortedRunners,
             race: race,
+            sectionTitle: filter.resultsSectionTitle,
             margin: margin,
             contentWidth: contentWidth,
-            startY: cursorY + 16,
-            pageBottom: pageRect.maxY - 70
+            startY: cursorY + 12,
+            pageBottom: pageRect.maxY - 58
         )
         
         // MARK: Footer
@@ -302,8 +331,12 @@ class RaceManager: ObservableObject {
             brand.draw(at: CGPoint(x: margin, y: y + 8))
         }
         
-        // Right meta
-        let dateText = DateFormatter.localizedString(from: race.dateCreated, dateStyle: .medium, timeStyle: .short)
+        // Right meta — distance + date (no time)
+        let dateText = DateFormatter.localizedString(
+            from: race.dateCreated,
+            dateStyle: .medium,
+            timeStyle: .none
+        )
         let meta = "\(String(format: "%.1f", race.distance)) km\n\(dateText)"
         let metaAttr = NSAttributedString(
             string: meta,
@@ -348,17 +381,6 @@ class RaceManager: ObservableObject {
         raceTitle.draw(in: CGRect(x: margin, y: y, width: contentWidth, height: 22))
         y += 22
         
-        let subtitle = NSAttributedString(
-            string: "Všichni běží, někdo zanechá stopu",
-            attributes: [
-                .font: UIFont.italicSystemFont(ofSize: 11),
-                .foregroundColor: ReportPalette.muted,
-                .paragraphStyle: titleStyle
-            ]
-        )
-        subtitle.draw(in: CGRect(x: margin, y: y, width: contentWidth, height: 16))
-        y += 18
-        
         // Accent line
         ReportPalette.forest.withAlphaComponent(0.35).setStroke()
         let line = UIBezierPath()
@@ -367,7 +389,7 @@ class RaceManager: ObservableObject {
         line.lineWidth = 1
         line.stroke()
         
-        return y + 8
+        return y + 6
     }
     
     private func drawPodiumSection(
@@ -377,7 +399,16 @@ class RaceManager: ObservableObject {
         contentWidth: CGFloat,
         startY: CGFloat
     ) -> CGFloat {
-        let podiumHeight: CGFloat = 168
+        // Compact podium: 3rd place is minimal (place # + 2 text lines); 2nd/1st step up from that.
+        let minBlockHeight: CGFloat = 52
+        let slots: [(placeIndex: Int, xFactor: CGFloat, blockHeight: CGFloat, color: UIColor)] = [
+            (1, 0.18, minBlockHeight + 10, ReportPalette.silver),
+            (0, 0.50, minBlockHeight + 20, ReportPalette.gold),
+            (2, 0.82, minBlockHeight, ReportPalette.bronze)
+        ]
+        let bottomPad: CGFloat = 8
+        let topPad: CGFloat = 10
+        let podiumHeight = (slots.map(\.blockHeight).max() ?? minBlockHeight) + bottomPad + topPad
         let podiumRect = CGRect(x: margin, y: startY, width: contentWidth, height: podiumHeight)
         
         guard let context = UIGraphicsGetCurrentContext() else {
@@ -386,8 +417,7 @@ class RaceManager: ObservableObject {
         
         context.saveGState()
         
-        // Scenic backdrop
-        let path = UIBezierPath(roundedRect: podiumRect, cornerRadius: 16)
+        let path = UIBezierPath(roundedRect: podiumRect, cornerRadius: 12)
         path.addClip()
         drawVerticalGradient(
             in: podiumRect,
@@ -397,21 +427,7 @@ class RaceManager: ObservableObject {
                 UIColor(red: 0.90, green: 0.93, blue: 0.86, alpha: 1)
             ]
         )
-        
-        // Soft hills / trees suggestion
         drawScenicBackdrop(in: podiumRect)
-        
-        // Sun
-        let sunCenter = CGPoint(x: podiumRect.midX + 110, y: podiumRect.minY + 28)
-        UIColor(red: 1.0, green: 0.92, blue: 0.55, alpha: 0.85).setFill()
-        UIBezierPath(ovalIn: CGRect(x: sunCenter.x - 16, y: sunCenter.y - 16, width: 32, height: 32)).fill()
-        
-        // Podium order visually: 2 | 1 | 3
-        let slots: [(placeIndex: Int, xFactor: CGFloat, blockHeight: CGFloat, color: UIColor)] = [
-            (1, 0.18, 58, ReportPalette.silver),
-            (0, 0.50, 78, ReportPalette.gold),
-            (2, 0.82, 48, ReportPalette.bronze)
-        ]
         
         for slot in slots {
             guard slot.placeIndex < runners.count else { continue }
@@ -419,7 +435,7 @@ class RaceManager: ObservableObject {
             let place = slot.placeIndex + 1
             let blockWidth: CGFloat = 118
             let centerX = podiumRect.minX + contentWidth * slot.xFactor
-            let blockY = podiumRect.maxY - 18 - slot.blockHeight
+            let blockY = podiumRect.maxY - bottomPad - slot.blockHeight
             let blockRect = CGRect(
                 x: centerX - blockWidth / 2,
                 y: blockY,
@@ -427,27 +443,10 @@ class RaceManager: ObservableObject {
                 height: slot.blockHeight
             )
             
-            // Runner silhouette above block
-            let symbolName = place == 1 ? "figure.arms.open" : "figure.run"
-            let tint = ReportPalette.navy.withAlphaComponent(0.85)
-            let iconSize: CGFloat = place == 1 ? 46 : 40
-            let icon = symbolImage(named: symbolName, pointSize: iconSize, color: tint)
-                ?? symbolImage(named: "figure.run", pointSize: iconSize, color: tint)
-            if let icon {
-                let iconRect = CGRect(
-                    x: centerX - iconSize / 2,
-                    y: blockY - iconSize - 8,
-                    width: iconSize,
-                    height: iconSize
-                )
-                icon.draw(in: iconRect)
-            }
-            
-            // Podium block
             let blockPath = UIBezierPath(
                 roundedRect: blockRect,
                 byRoundingCorners: [.topLeft, .topRight],
-                cornerRadii: CGSize(width: 10, height: 10)
+                cornerRadii: CGSize(width: 8, height: 8)
             )
             slot.color.setFill()
             blockPath.fill()
@@ -455,20 +454,18 @@ class RaceManager: ObservableObject {
             blockPath.lineWidth = 1
             blockPath.stroke()
             
-            // Place number
             let placeStyle = NSMutableParagraphStyle()
             placeStyle.alignment = .center
             let placeText = NSAttributedString(
                 string: "\(place)",
                 attributes: [
-                    .font: UIFont.systemFont(ofSize: 22, weight: .black),
+                    .font: UIFont.systemFont(ofSize: 18, weight: .black),
                     .foregroundColor: UIColor.white,
                     .paragraphStyle: placeStyle
                 ]
             )
-            placeText.draw(in: CGRect(x: blockRect.minX, y: blockRect.minY + 8, width: blockRect.width, height: 26))
+            placeText.draw(in: CGRect(x: blockRect.minX, y: blockRect.minY + 4, width: blockRect.width, height: 20))
             
-            // Name + time on block
             let label = podiumLabel(for: runner, race: race)
             let labelAttr = NSAttributedString(
                 string: label,
@@ -478,14 +475,13 @@ class RaceManager: ObservableObject {
                     .paragraphStyle: placeStyle
                 ]
             )
-            labelAttr.draw(in: CGRect(x: blockRect.minX + 4, y: blockRect.maxY - 28, width: blockRect.width - 8, height: 24))
+            labelAttr.draw(in: CGRect(x: blockRect.minX + 4, y: blockRect.maxY - 26, width: blockRect.width - 8, height: 24))
         }
         
         context.restoreGState()
         
-        // Subtle border around podium card
         UIColor.white.withAlphaComponent(0.8).setStroke()
-        let border = UIBezierPath(roundedRect: podiumRect, cornerRadius: 16)
+        let border = UIBezierPath(roundedRect: podiumRect, cornerRadius: 12)
         border.lineWidth = 1.5
         border.stroke()
         
@@ -506,42 +502,41 @@ class RaceManager: ObservableObject {
     }
     
     private func drawScenicBackdrop(in rect: CGRect) {
-        // Far mountains
         let mountains = UIBezierPath()
-        mountains.move(to: CGPoint(x: rect.minX, y: rect.midY + 20))
-        mountains.addLine(to: CGPoint(x: rect.minX + 70, y: rect.minY + 40))
-        mountains.addLine(to: CGPoint(x: rect.minX + 130, y: rect.midY + 10))
-        mountains.addLine(to: CGPoint(x: rect.minX + 200, y: rect.minY + 50))
+        mountains.move(to: CGPoint(x: rect.minX, y: rect.midY + 8))
+        mountains.addLine(to: CGPoint(x: rect.minX + 70, y: rect.minY + 12))
+        mountains.addLine(to: CGPoint(x: rect.minX + 130, y: rect.midY + 4))
+        mountains.addLine(to: CGPoint(x: rect.minX + 200, y: rect.minY + 16))
         mountains.addLine(to: CGPoint(x: rect.minX + 280, y: rect.midY))
-        mountains.addLine(to: CGPoint(x: rect.maxX, y: rect.minY + 55))
+        mountains.addLine(to: CGPoint(x: rect.maxX, y: rect.minY + 18))
         mountains.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
         mountains.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
         mountains.close()
-        UIColor(red: 0.45, green: 0.58, blue: 0.52, alpha: 0.35).setFill()
+        UIColor(red: 0.45, green: 0.58, blue: 0.52, alpha: 0.30).setFill()
         mountains.fill()
         
-        // Near treeline
         let trees = UIBezierPath()
-        trees.move(to: CGPoint(x: rect.minX, y: rect.maxY - 40))
+        trees.move(to: CGPoint(x: rect.minX, y: rect.maxY - 18))
         var x = rect.minX
         var up = true
         while x < rect.maxX {
-            let peakY = rect.maxY - (up ? 70 : 52)
-            trees.addLine(to: CGPoint(x: x + 18, y: peakY))
-            trees.addLine(to: CGPoint(x: x + 36, y: rect.maxY - 40))
-            x += 36
+            let peakY = rect.maxY - (up ? 36 : 26)
+            trees.addLine(to: CGPoint(x: x + 16, y: peakY))
+            trees.addLine(to: CGPoint(x: x + 32, y: rect.maxY - 18))
+            x += 32
             up.toggle()
         }
         trees.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
         trees.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
         trees.close()
-        UIColor(red: 0.22, green: 0.42, blue: 0.30, alpha: 0.45).setFill()
+        UIColor(red: 0.22, green: 0.42, blue: 0.30, alpha: 0.40).setFill()
         trees.fill()
     }
     
     private func drawResultsTable(
         runners: [Runner],
         race: Race,
+        sectionTitle: String,
         margin: CGFloat,
         contentWidth: CGFloat,
         startY: CGFloat,
@@ -562,7 +557,7 @@ class RaceManager: ObservableObject {
         
         // Section label
         let section = NSAttributedString(
-            string: "Kompletní výsledky",
+            string: sectionTitle,
             attributes: [
                 .font: UIFont.systemFont(ofSize: 12, weight: .bold),
                 .foregroundColor: ReportPalette.navy
@@ -647,7 +642,7 @@ class RaceManager: ObservableObject {
     }
     
     private func drawReportFooter(margin: CGFloat, contentWidth: CGFloat, pageRect: CGRect) {
-        let footerTop = pageRect.maxY - 58
+        let footerTop = pageRect.maxY - 48
         
         ReportPalette.forest.withAlphaComponent(0.25).setStroke()
         let line = UIBezierPath()
@@ -656,17 +651,8 @@ class RaceManager: ObservableObject {
         line.lineWidth = 1
         line.stroke()
         
-        let left = NSAttributedString(
-            string: "Běháme pro lepší zítřky",
-            attributes: [
-                .font: UIFont.italicSystemFont(ofSize: 11),
-                .foregroundColor: ReportPalette.forest
-            ]
-        )
-        left.draw(at: CGPoint(x: margin, y: footerTop + 12))
-        
         let thanksStyle = NSMutableParagraphStyle()
-        thanksStyle.alignment = .right
+        thanksStyle.alignment = .center
         let thanks = NSAttributedString(
             string: "Děkujeme, že jste běželi s námi!",
             attributes: [
@@ -677,7 +663,7 @@ class RaceManager: ObservableObject {
         )
         let badgeWidth: CGFloat = 230
         let badgeRect = CGRect(
-            x: margin + contentWidth - badgeWidth,
+            x: margin + (contentWidth - badgeWidth) / 2,
             y: footerTop + 8,
             width: badgeWidth,
             height: 28
@@ -707,12 +693,6 @@ class RaceManager: ObservableObject {
             options: []
         )
         context.restoreGState()
-    }
-    
-    private func symbolImage(named name: String, pointSize: CGFloat, color: UIColor) -> UIImage? {
-        let config = UIImage.SymbolConfiguration(pointSize: pointSize, weight: .bold)
-        return UIImage(systemName: name, withConfiguration: config)?
-            .withTintColor(color, renderingMode: .alwaysOriginal)
     }
     
     private func formatTimeForPDF(_ finishTime: Date?, raceStartTime: Date?) -> String {
