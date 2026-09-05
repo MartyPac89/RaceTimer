@@ -270,11 +270,6 @@ struct RaceDetailView: View {
                                 .font(.subheadline)
                                 .foregroundColor(.secondary)
                         }
-                        
-                        Text(selectedListKind.title)
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.blue)
                     }
                     .padding()
                     .background(Color(.systemGray6))
@@ -285,37 +280,64 @@ struct RaceDetailView: View {
                                 .tag(kind)
                         }
                     }
-                    .tabViewStyle(.page(indexDisplayMode: .always))
-                    .indexViewStyle(.page(backgroundDisplayMode: .always))
+                    .tabViewStyle(.page(indexDisplayMode: .never))
                     .onChange(of: selectedListKind) { _, _ in
                         selectedRunnerIds.removeAll()
                     }
                     
-                    if isEditMode {
-                        HStack(spacing: 12) {
-                            Text(selectedRunnerIds.isEmpty
-                                  ? "Select runners"
-                                  : "\(selectedRunnerIds.count) selected")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-                            
-                            Spacer()
-                            
-                            Button("Set F") {
-                                applyBulkGender(.F, for: currentRace.id)
+                    VStack(spacing: 10) {
+                        if isEditMode {
+                            HStack(spacing: 12) {
+                                Text(selectedRunnerIds.isEmpty
+                                      ? "Select runners"
+                                      : "\(selectedRunnerIds.count) selected")
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                                
+                                Spacer()
+                                
+                                Button("Set F") {
+                                    applyBulkGender(.F, for: currentRace.id)
+                                }
+                                .buttonStyle(.bordered)
+                                .disabled(selectedRunnerIds.isEmpty)
+                                
+                                Button("Set M") {
+                                    applyBulkGender(.M, for: currentRace.id)
+                                }
+                                .buttonStyle(.bordered)
+                                .disabled(selectedRunnerIds.isEmpty)
                             }
-                            .buttonStyle(.bordered)
-                            .disabled(selectedRunnerIds.isEmpty)
-                            
-                            Button("Set M") {
-                                applyBulkGender(.M, for: currentRace.id)
-                            }
-                            .buttonStyle(.bordered)
-                            .disabled(selectedRunnerIds.isEmpty)
                         }
-                        .padding()
-                        .background(Color(.systemGray6))
+                        
+                        HStack(spacing: 10) {
+                            ForEach(ResultsListKind.allCases) { kind in
+                                Button {
+                                    withAnimation(.easeInOut(duration: 0.2)) {
+                                        selectedListKind = kind
+                                    }
+                                } label: {
+                                    Circle()
+                                        .fill(kind == selectedListKind ? Color.blue : Color.secondary.opacity(0.35))
+                                        .frame(width: kind == selectedListKind ? 9 : 7,
+                                               height: kind == selectedListKind ? 9 : 7)
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel(kind.title)
+                            }
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, isEditMode ? 2 : 0)
+                        
+                        Text(selectedListKind.title)
+                            .font(.caption)
+                            .fontWeight(.medium)
+                            .foregroundColor(.secondary)
                     }
+                    .padding(.horizontal)
+                    .padding(.top, 10)
+                    .padding(.bottom, 12)
+                    .background(Color(.systemGray6))
                 } else {
                     // Race not found
                     VStack {
