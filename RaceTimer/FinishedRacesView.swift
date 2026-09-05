@@ -140,12 +140,18 @@ struct RaceRowView: View {
 }
 
 struct RaceDetailView: View {
+    enum ExportFormat {
+        case pdf
+        case jpeg
+    }
+    
     let race: Race
     @EnvironmentObject var raceManager: RaceManager
     @Environment(\.dismiss) private var dismiss
     @State private var showingDeleteAlert = false
+    @State private var showingExportOptions = false
     @State private var showingShareSheet = false
-    @State private var pdfData: Data?
+    @State private var shareURL: URL?
     @State private var isEditMode = false
     
     // Get the current race data from RaceManager to ensure we have the latest updates
@@ -245,7 +251,7 @@ struct RaceDetailView: View {
                         }
                         
                         Button(action: {
-                            generatePDF()
+                            showingExportOptions = true
                         }) {
                             Image(systemName: "square.and.arrow.down")
                                 .foregroundColor(.blue)
@@ -269,17 +275,57 @@ struct RaceDetailView: View {
         } message: {
             Text("Are you sure you want to delete this race? This action cannot be undone.")
         }
-        .sheet(isPresented: $showingShareSheet) {
-            if let pdfData = pdfData {
-                ShareSheet(activityItems: [pdfData])
+        .confirmationDialog("Download Race Report", isPresented: $showingExportOptions, titleVisibility: .visible) {
+            Button("PDF") {
+                exportRace(as: .pdf)
+            }
+            Button("JPEG") {
+                exportRace(as: .jpeg)
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("Choose a format for this race report.")
+        }
+        .sheet(isPresented: $showingShareSheet, onDismiss: {
+            shareURL = nil
+        }) {
+            if let shareURL {
+                ShareSheet(activityItems: [shareURL])
             }
         }
     }
     
-    private func generatePDF() {
-        if let currentRace = currentRace {
-            pdfData = raceManager.generatePDF(for: currentRace)
+    private func exportRace(as format: ExportFormat) {
+        guard let currentRace else { return }
+        
+        let safeName = currentRace.name
+            .replacingOccurrences(of: "/", with: "-")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let fileName = safeName.isEmpty ? "RaceReport" : safeName
+        
+        let data: Data?
+        let fileExtension: String
+        
+        switch format {
+        case .pdf:
+            data = raceManager.generatePDF(for: currentRace)
+            fileExtension = "pdf"
+        case .jpeg:
+            data = raceManager.generateJPEG(for: currentRace)
+            fileExtension = "jpg"
+        }
+        
+        guard let data else { return }
+        
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("\(fileName).\(fileExtension)")
+        
+        do {
+            try data.write(to: url, options: .atomic)
+            shareURL = url
             showingShareSheet = true
+        } catch {
+            // Keep silent in UI; generation failure simply skips the share sheet.
         }
     }
     

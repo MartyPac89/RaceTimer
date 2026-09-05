@@ -121,119 +121,128 @@ class RaceManager: ObservableObject {
         let format = UIGraphicsPDFRendererFormat()
         format.documentInfo = pdfMetaData as [String: Any]
         
-        let pageWidth = 8.5 * 72.0
-        let pageHeight = 11.0 * 72.0
-        let pageRect = CGRect(x: 0, y: 0, width: pageWidth, height: pageHeight)
-        
+        let pageRect = Self.reportPageRect
         let renderer = UIGraphicsPDFRenderer(bounds: pageRect, format: format)
         
-        let data = renderer.pdfData { context in
+        return renderer.pdfData { context in
             context.beginPage()
-            
-            // Logo at the top
-            if let logoImage = UIImage(named: "logo") {
-                let logoSize = CGSize(width: 120, height: 60) // Adjust size as needed
-                let logoRect = CGRect(
-                    x: (pageWidth - logoSize.width) / 2, // Center horizontally
-                    y: 20, // Top margin
-                    width: logoSize.width,
-                    height: logoSize.height
-                )
-                logoImage.draw(in: logoRect)
-            }
-            
-            // Title
-            let titleFont = UIFont.boldSystemFont(ofSize: 24)
-            let titleAttributes: [NSAttributedString.Key: Any] = [
-                .font: titleFont,
-                .foregroundColor: UIColor.black
-            ]
-            let title = NSAttributedString(string: race.name, attributes: titleAttributes)
-            let titleRect = CGRect(x: 50, y: 100, width: pageWidth - 100, height: 30) // Moved down to accommodate logo
-            title.draw(in: titleRect)
-            
-            // Race details
-            let detailsFont = UIFont.systemFont(ofSize: 16)
-            let detailsAttributes: [NSAttributedString.Key: Any] = [
-                .font: detailsFont,
-                .foregroundColor: UIColor.gray
-            ]
-            let distanceText = "Distance: \(String(format: "%.1f", race.distance)) km"
-            let dateText = "Date: \(DateFormatter.localizedString(from: race.dateCreated, dateStyle: .medium, timeStyle: .short))"
-            let details = "\(distanceText)\n\(dateText)"
-            let detailsAttributed = NSAttributedString(string: details, attributes: detailsAttributes)
-            let detailsRect = CGRect(x: 50, y: 140, width: pageWidth - 100, height: 40) // Moved down to accommodate logo
-            detailsAttributed.draw(in: detailsRect)
-            
-            // Results table
-            let tableY: CGFloat = 200 // Moved down to accommodate logo
-            let rowHeight: CGFloat = 25
-            let columnWidths: [CGFloat] = [60, 100, 120, 100, 120] // Place, Time, Pace, Runner #, Runner Name
-            let tableX: CGFloat = 50
-            
-            // Table header
-            let headerFont = UIFont.boldSystemFont(ofSize: 14)
-            let headerAttributes: [NSAttributedString.Key: Any] = [
-                .font: headerFont,
-                .foregroundColor: UIColor.white
-            ]
-            
-            let headerBackground = CGRect(x: tableX, y: tableY, width: pageWidth - 100, height: rowHeight)
-            UIColor.systemBlue.setFill()
-            context.fill(headerBackground)
-            
-            var currentX = tableX + 10
-            let headers = ["Place", "Time", "Pace/KM", "Runner #", "Runner Name"]
-            for (index, header) in headers.enumerated() {
-                let headerRect = CGRect(x: currentX, y: tableY + 5, width: columnWidths[index], height: rowHeight - 10)
-                NSAttributedString(string: header, attributes: headerAttributes).draw(in: headerRect)
-                currentX += columnWidths[index]
-            }
-            
-            // Table rows
-            let rowFont = UIFont.systemFont(ofSize: 12)
-            let rowAttributes: [NSAttributedString.Key: Any] = [
-                .font: rowFont,
-                .foregroundColor: UIColor.black
-            ]
-            
-            let sortedRunners = race.sortedRunners
-            for (index, runner) in sortedRunners.enumerated() {
-                let rowY = tableY + rowHeight + CGFloat(index) * rowHeight
-                
-                currentX = tableX + 10
-                
-                // Place
-                let placeRect = CGRect(x: currentX, y: rowY + 5, width: columnWidths[0], height: rowHeight - 10)
-                NSAttributedString(string: "\(index + 1)", attributes: rowAttributes).draw(in: placeRect)
-                currentX += columnWidths[0]
-                
-                // Time
-                let timeText = formatTimeForPDF(runner.finishTime, raceStartTime: race.raceStartTime)
-                let timeRect = CGRect(x: currentX, y: rowY + 5, width: columnWidths[1], height: rowHeight - 10)
-                NSAttributedString(string: timeText, attributes: rowAttributes).draw(in: timeRect)
-                currentX += columnWidths[1]
-                
-                // Pace
-                let paceText = formatPaceForPDF(runner.finishTime, raceStartTime: race.raceStartTime, distance: race.distance)
-                let paceRect = CGRect(x: currentX, y: rowY + 5, width: columnWidths[2], height: rowHeight - 10)
-                NSAttributedString(string: paceText, attributes: rowAttributes).draw(in: paceRect)
-                currentX += columnWidths[2]
-                
-                // Runner Number
-                let runnerNumber = runner.runnerNumber.isEmpty ? "—" : runner.runnerNumber
-                let runnerRect = CGRect(x: currentX, y: rowY + 5, width: columnWidths[3], height: rowHeight - 10)
-                NSAttributedString(string: runnerNumber, attributes: rowAttributes).draw(in: runnerRect)
-                currentX += columnWidths[3]
-                
-                // Runner Name
-                let runnerName = runner.runnerName.isEmpty ? "—" : runner.runnerName
-                let runnerNameRect = CGRect(x: currentX, y: rowY + 5, width: columnWidths[4], height: rowHeight - 10)
-                NSAttributedString(string: runnerName, attributes: rowAttributes).draw(in: runnerNameRect)
-            }
+            drawRaceReport(race: race, in: pageRect, fillBackground: false)
+        }
+    }
+    
+    func generateJPEG(for race: Race) -> Data? {
+        let pageRect = Self.reportPageRect
+        let renderer = UIGraphicsImageRenderer(size: pageRect.size)
+        let image = renderer.image { _ in
+            drawRaceReport(race: race, in: pageRect, fillBackground: true)
+        }
+        return image.jpegData(compressionQuality: 0.92)
+    }
+    
+    private static let reportPageRect = CGRect(x: 0, y: 0, width: 8.5 * 72.0, height: 11.0 * 72.0)
+    
+    private func drawRaceReport(race: Race, in pageRect: CGRect, fillBackground: Bool) {
+        let pageWidth = pageRect.width
+        
+        if fillBackground {
+            UIColor.white.setFill()
+            UIRectFill(pageRect)
         }
         
-        return data
+        // Logo at the top
+        if let logoImage = UIImage(named: "logo") {
+            let logoSize = CGSize(width: 120, height: 60)
+            let logoRect = CGRect(
+                x: (pageWidth - logoSize.width) / 2,
+                y: 20,
+                width: logoSize.width,
+                height: logoSize.height
+            )
+            logoImage.draw(in: logoRect)
+        }
+        
+        // Title
+        let titleFont = UIFont.boldSystemFont(ofSize: 24)
+        let titleAttributes: [NSAttributedString.Key: Any] = [
+            .font: titleFont,
+            .foregroundColor: UIColor.black
+        ]
+        let title = NSAttributedString(string: race.name, attributes: titleAttributes)
+        let titleRect = CGRect(x: 50, y: 100, width: pageWidth - 100, height: 30)
+        title.draw(in: titleRect)
+        
+        // Race details
+        let detailsFont = UIFont.systemFont(ofSize: 16)
+        let detailsAttributes: [NSAttributedString.Key: Any] = [
+            .font: detailsFont,
+            .foregroundColor: UIColor.gray
+        ]
+        let distanceText = "Distance: \(String(format: "%.1f", race.distance)) km"
+        let dateText = "Date: \(DateFormatter.localizedString(from: race.dateCreated, dateStyle: .medium, timeStyle: .short))"
+        let details = "\(distanceText)\n\(dateText)"
+        let detailsAttributed = NSAttributedString(string: details, attributes: detailsAttributes)
+        let detailsRect = CGRect(x: 50, y: 140, width: pageWidth - 100, height: 40)
+        detailsAttributed.draw(in: detailsRect)
+        
+        // Results table
+        let tableY: CGFloat = 200
+        let rowHeight: CGFloat = 25
+        let columnWidths: [CGFloat] = [60, 100, 120, 100, 120]
+        let tableX: CGFloat = 50
+        
+        let headerFont = UIFont.boldSystemFont(ofSize: 14)
+        let headerAttributes: [NSAttributedString.Key: Any] = [
+            .font: headerFont,
+            .foregroundColor: UIColor.white
+        ]
+        
+        let headerBackground = CGRect(x: tableX, y: tableY, width: pageWidth - 100, height: rowHeight)
+        UIColor.systemBlue.setFill()
+        UIRectFill(headerBackground)
+        
+        var currentX = tableX + 10
+        let headers = ["Place", "Time", "Pace/KM", "Runner #", "Runner Name"]
+        for (index, header) in headers.enumerated() {
+            let headerRect = CGRect(x: currentX, y: tableY + 5, width: columnWidths[index], height: rowHeight - 10)
+            NSAttributedString(string: header, attributes: headerAttributes).draw(in: headerRect)
+            currentX += columnWidths[index]
+        }
+        
+        let rowFont = UIFont.systemFont(ofSize: 12)
+        let rowAttributes: [NSAttributedString.Key: Any] = [
+            .font: rowFont,
+            .foregroundColor: UIColor.black
+        ]
+        
+        let sortedRunners = race.sortedRunners
+        for (index, runner) in sortedRunners.enumerated() {
+            let rowY = tableY + rowHeight + CGFloat(index) * rowHeight
+            
+            currentX = tableX + 10
+            
+            let placeRect = CGRect(x: currentX, y: rowY + 5, width: columnWidths[0], height: rowHeight - 10)
+            NSAttributedString(string: "\(index + 1)", attributes: rowAttributes).draw(in: placeRect)
+            currentX += columnWidths[0]
+            
+            let timeText = formatTimeForPDF(runner.finishTime, raceStartTime: race.raceStartTime)
+            let timeRect = CGRect(x: currentX, y: rowY + 5, width: columnWidths[1], height: rowHeight - 10)
+            NSAttributedString(string: timeText, attributes: rowAttributes).draw(in: timeRect)
+            currentX += columnWidths[1]
+            
+            let paceText = formatPaceForPDF(runner.finishTime, raceStartTime: race.raceStartTime, distance: race.distance)
+            let paceRect = CGRect(x: currentX, y: rowY + 5, width: columnWidths[2], height: rowHeight - 10)
+            NSAttributedString(string: paceText, attributes: rowAttributes).draw(in: paceRect)
+            currentX += columnWidths[2]
+            
+            let runnerNumber = runner.runnerNumber.isEmpty ? "—" : runner.runnerNumber
+            let runnerRect = CGRect(x: currentX, y: rowY + 5, width: columnWidths[3], height: rowHeight - 10)
+            NSAttributedString(string: runnerNumber, attributes: rowAttributes).draw(in: runnerRect)
+            currentX += columnWidths[3]
+            
+            let runnerName = runner.runnerName.isEmpty ? "—" : runner.runnerName
+            let runnerNameRect = CGRect(x: currentX, y: rowY + 5, width: columnWidths[4], height: rowHeight - 10)
+            NSAttributedString(string: runnerName, attributes: rowAttributes).draw(in: runnerNameRect)
+        }
     }
     
     private func formatTimeForPDF(_ finishTime: Date?, raceStartTime: Date?) -> String {

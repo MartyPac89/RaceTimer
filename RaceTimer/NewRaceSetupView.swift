@@ -15,7 +15,7 @@ struct NewRaceSetupView: View {
     @State private var distance = ""
     @State private var numberOfRunners = ""
     @State private var showingRaceTiming = false
-    @State private var raceFinished = false
+    @State private var timingExitAction: RaceTimingExitAction = .none
     
     var body: some View {
         NavigationView {
@@ -96,19 +96,33 @@ struct NewRaceSetupView: View {
         }
         .navigationViewStyle(.stack)
         .fullScreenCover(isPresented: $showingRaceTiming) {
-            RaceTimingView(raceFinished: $raceFinished)
+            RaceTimingView(exitAction: $timingExitAction)
                 .environmentObject(raceManager)
         }
-        .onChange(of: raceFinished) { _, finished in
-            if finished {
-                dismiss()
-            }
+        .onChange(of: timingExitAction) { _, action in
+            handleTimingExit(action)
         }
         .onDisappear {
             // Only clear when leaving setup itself — not while the timing cover is up.
-            if !raceFinished && !showingRaceTiming {
+            if !showingRaceTiming {
                 raceManager.abandonCurrentRace()
             }
+        }
+    }
+    
+    private func handleTimingExit(_ action: RaceTimingExitAction) {
+        switch action {
+        case .none:
+            break
+        case .createNewRace:
+            showingRaceTiming = false
+            raceName = ""
+            distance = ""
+            numberOfRunners = ""
+            timingExitAction = .none
+        case .backToMenu:
+            timingExitAction = .none
+            dismiss()
         }
     }
     
@@ -119,7 +133,7 @@ struct NewRaceSetupView: View {
               runnerCount > 0 else { return }
         
         raceManager.createNewRace(name: raceName, distance: distanceValue, numberOfRunners: runnerCount)
-        raceFinished = false
+        timingExitAction = .none
         showingRaceTiming = true
     }
     

@@ -1,17 +1,31 @@
 import SwiftUI
 
+enum RaceTimingExitAction: Equatable {
+    case none
+    case createNewRace
+    case backToMenu
+}
+
 struct RaceTimingView: View {
-    @Binding var raceFinished: Bool
+    @Binding var exitAction: RaceTimingExitAction
     @EnvironmentObject var raceManager: RaceManager
     @Environment(\.dismiss) private var dismiss
     
     @State private var showingFinishAlert = false
     @State private var showingAbandonAlert = false
+    @State private var showingExportOptions = false
+    @State private var showingShareSheet = false
+    @State private var shareURL: URL?
     @State private var isRaceFinished = false
     @State private var tempRunners: [Runner] = []
+    @State private var completedRace: Race?
     
-    private var currentRace: Race? {
-        raceManager.currentRace
+    private var displayedRace: Race? {
+        completedRace ?? raceManager.currentRace
+    }
+    
+    private var displayedStartTime: Date? {
+        completedRace?.raceStartTime ?? raceManager.raceStartTime
     }
     
     private var allRunnersHaveFinishTimes: Bool {
@@ -29,16 +43,18 @@ struct RaceTimingView: View {
         NavigationView {
             VStack(spacing: 0) {
                 VStack(spacing: 8) {
-                    Text(currentRace?.name ?? "Race")
+                    Text(displayedRace?.name ?? "Race")
                         .font(.title2)
                         .fontWeight(.bold)
                     
-                    Text("\(currentRace?.distance ?? 0, specifier: "%.1f") km")
+                    Text("\(displayedRace?.distance ?? 0, specifier: "%.1f") km")
                         .font(.headline)
                         .foregroundColor(.secondary)
                     
-                    if raceManager.isRaceStarted, let startTime = raceManager.raceStartTime {
-                        // Clock lives in its own view so 100Hz ticks don't rebuild TextFields.
+                    if isRaceFinished, let startTime = displayedStartTime {
+                        RaceElapsedTimeView(startTime: startTime, isComplete: true)
+                    } else if raceManager.isRaceStarted, let startTime = raceManager.raceStartTime {
+                        // Clock lives in its own view so ticks don't rebuild TextFields.
                         RaceElapsedTimeView(
                             startTime: startTime,
                             isComplete: allRunnersHaveFinishTimes
@@ -69,7 +85,7 @@ struct RaceTimingView: View {
                                 RunnerRowView(
                                     place: index + 1,
                                     finishTime: runner.finishTime,
-                                    raceStartTime: raceManager.raceStartTime,
+                                    raceStartTime: displayedStartTime,
                                     runnerNumber: .constant(runner.runnerNumber),
                                     isRaceFinished: true
                                 )
@@ -90,76 +106,10 @@ struct RaceTimingView: View {
                 }
                 
                 VStack(spacing: 16) {
-                    if !raceManager.isRaceStarted {
-                        Button(action: {
-                            raceManager.startRace()
-                        }) {
-                            HStack {
-                                Image(systemName: "play.circle.fill")
-                                Text("START RACE")
-                                    .fontWeight(.bold)
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding()
-                            .background(Color.blue)
-                            .foregroundColor(.white)
-                            .cornerRadius(12)
-                        }
-                        .buttonStyle(BorderlessButtonStyle())
-                        .padding(.horizontal, 20)
-                    }
-                    
-                    Button(action: recordTime) {
-                        HStack {
-                            Image(systemName: "stopwatch.fill")
-                            Text("RECORD A TIME")
-                                .fontWeight(.bold)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background((allRunnersHaveFinishTimes || !raceManager.isRaceStarted) ? Color.gray : Color.red)
-                        .foregroundColor(.white)
-                        .cornerRadius(12)
-                    }
-                    .buttonStyle(BorderlessButtonStyle())
-                    .disabled(allRunnersHaveFinishTimes || !raceManager.isRaceStarted)
-                    .padding(.horizontal, 20)
-                    
-                    if !isRaceFinished {
-                        Button(action: {
-                            showingFinishAlert = true
-                        }) {
-                            HStack {
-                                Image(systemName: "flag.checkered")
-                                Text("FINISH RACE")
-                                    .fontWeight(.semibold)
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding()
-                            .background(Color.green)
-                            .foregroundColor(.white)
-                            .cornerRadius(12)
-                        }
-                        .buttonStyle(BorderlessButtonStyle())
-                        .padding(.horizontal, 20)
+                    if isRaceFinished {
+                        finishedRaceActions
                     } else {
-                        Button(action: {
-                            raceFinished = true
-                            dismiss()
-                        }) {
-                            HStack {
-                                Image(systemName: "square.and.arrow.down")
-                                Text("SAVE REPORT")
-                                    .fontWeight(.semibold)
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding()
-                            .background(Color.blue)
-                            .foregroundColor(.white)
-                            .cornerRadius(12)
-                        }
-                        .buttonStyle(BorderlessButtonStyle())
-                        .padding(.horizontal, 20)
+                        activeRaceActions
                     }
                     
                     Spacer()
@@ -170,8 +120,10 @@ struct RaceTimingView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Back") {
-                        handleBack()
+                    if !isRaceFinished {
+                        Button("Back") {
+                            handleBack()
+                        }
                     }
                 }
             }
@@ -193,6 +145,24 @@ struct RaceTimingView: View {
         } message: {
             Text("The race is still running. Leaving will discard timing for this race.")
         }
+        .confirmationDialog("Save The Report", isPresented: $showingExportOptions, titleVisibility: .visible) {
+            Button("PDF") {
+                exportCompletedRace(as: .pdf)
+            }
+            Button("JPEG") {
+                exportCompletedRace(as: .jpeg)
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("Choose a format for this race report.")
+        }
+        .sheet(isPresented: $showingShareSheet, onDismiss: {
+            shareURL = nil
+        }) {
+            if let shareURL {
+                ShareSheet(activityItems: [shareURL])
+            }
+        }
         .onAppear(perform: setupView)
         .onDisappear {
             if !isRaceFinished {
@@ -201,14 +171,129 @@ struct RaceTimingView: View {
         }
     }
     
+    @ViewBuilder
+    private var activeRaceActions: some View {
+        if !raceManager.isRaceStarted {
+            Button(action: {
+                raceManager.startRace()
+            }) {
+                HStack {
+                    Image(systemName: "play.circle.fill")
+                    Text("START RACE")
+                        .fontWeight(.bold)
+                }
+                .frame(maxWidth: .infinity)
+                .padding()
+                .background(Color.blue)
+                .foregroundColor(.white)
+                .cornerRadius(12)
+            }
+            .buttonStyle(BorderlessButtonStyle())
+            .padding(.horizontal, 20)
+        }
+        
+        Button(action: recordTime) {
+            HStack {
+                Image(systemName: "stopwatch.fill")
+                Text("RECORD A TIME")
+                    .fontWeight(.bold)
+            }
+            .frame(maxWidth: .infinity)
+            .padding()
+            .background((allRunnersHaveFinishTimes || !raceManager.isRaceStarted) ? Color.gray : Color.red)
+            .foregroundColor(.white)
+            .cornerRadius(12)
+        }
+        .buttonStyle(BorderlessButtonStyle())
+        .disabled(allRunnersHaveFinishTimes || !raceManager.isRaceStarted)
+        .padding(.horizontal, 20)
+        
+        Button(action: {
+            showingFinishAlert = true
+        }) {
+            HStack {
+                Image(systemName: "flag.checkered")
+                Text("FINISH RACE")
+                    .fontWeight(.semibold)
+            }
+            .frame(maxWidth: .infinity)
+            .padding()
+            .background(Color.green)
+            .foregroundColor(.white)
+            .cornerRadius(12)
+        }
+        .buttonStyle(BorderlessButtonStyle())
+        .padding(.horizontal, 20)
+    }
+    
+    private var finishedRaceActions: some View {
+        VStack(spacing: 16) {
+            Button(action: {
+                exitAction = .createNewRace
+                dismiss()
+            }) {
+                HStack {
+                    Image(systemName: "plus.circle.fill")
+                    Text("CREATE NEW RACE")
+                        .fontWeight(.semibold)
+                }
+                .frame(maxWidth: .infinity)
+                .padding()
+                .background(Color.blue)
+                .foregroundColor(.white)
+                .cornerRadius(12)
+            }
+            .buttonStyle(BorderlessButtonStyle())
+            .padding(.horizontal, 20)
+            
+            Button(action: {
+                showingExportOptions = true
+            }) {
+                HStack {
+                    Image(systemName: "square.and.arrow.down")
+                    Text("SAVE THE REPORT")
+                        .fontWeight(.semibold)
+                }
+                .frame(maxWidth: .infinity)
+                .padding()
+                .background(Color.green)
+                .foregroundColor(.white)
+                .cornerRadius(12)
+            }
+            .buttonStyle(BorderlessButtonStyle())
+            .padding(.horizontal, 20)
+            
+            Button(action: {
+                exitAction = .backToMenu
+                dismiss()
+            }) {
+                HStack {
+                    Image(systemName: "house.fill")
+                    Text("BACK TO MENU")
+                        .fontWeight(.semibold)
+                }
+                .frame(maxWidth: .infinity)
+                .padding()
+                .background(Color.gray)
+                .foregroundColor(.white)
+                .cornerRadius(12)
+            }
+            .buttonStyle(BorderlessButtonStyle())
+            .padding(.horizontal, 20)
+        }
+    }
+    
+    private enum ExportFormat {
+        case pdf
+        case jpeg
+    }
+    
     private func place(for runnerId: UUID) -> Int {
         (tempRunners.firstIndex(where: { $0.id == runnerId }) ?? 0) + 1
     }
     
     private func handleBack() {
-        if isRaceFinished {
-            dismiss()
-        } else if raceManager.isRaceStarted {
+        if raceManager.isRaceStarted {
             showingAbandonAlert = true
         } else {
             abandonAndDismiss()
@@ -233,19 +318,56 @@ struct RaceTimingView: View {
     }
     
     private func setupView() {
-        if let race = currentRace {
+        if let race = raceManager.currentRace {
             tempRunners = race.runners
         }
     }
     
     private func finishRace() {
-        if var race = currentRace {
-            race.runners = tempRunners
-            raceManager.currentRace = race
+        guard var race = raceManager.currentRace else { return }
+        
+        race.runners = tempRunners
+        let raceId = race.id
+        raceManager.currentRace = race
+        raceManager.finishRace()
+        
+        completedRace = raceManager.races.first(where: { $0.id == raceId })
+        tempRunners = completedRace?.runners ?? tempRunners
+        isRaceFinished = true
+    }
+    
+    private func exportCompletedRace(as format: ExportFormat) {
+        guard let race = completedRace else { return }
+        
+        let safeName = race.name
+            .replacingOccurrences(of: "/", with: "-")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let fileName = safeName.isEmpty ? "RaceReport" : safeName
+        
+        let data: Data?
+        let fileExtension: String
+        
+        switch format {
+        case .pdf:
+            data = raceManager.generatePDF(for: race)
+            fileExtension = "pdf"
+        case .jpeg:
+            data = raceManager.generateJPEG(for: race)
+            fileExtension = "jpg"
         }
         
-        isRaceFinished = true
-        raceManager.finishRace()
+        guard let data else { return }
+        
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("\(fileName).\(fileExtension)")
+        
+        do {
+            try data.write(to: url, options: .atomic)
+            shareURL = url
+            showingShareSheet = true
+        } catch {
+            // Skip share sheet if the file could not be written.
+        }
     }
 }
 
