@@ -88,6 +88,28 @@ class RaceManager: ObservableObject {
         saveRaces()
     }
     
+    func updateCompletedRaceName(for raceId: UUID, name: String) {
+        guard let raceIndex = races.firstIndex(where: { $0.id == raceId }) else {
+            return
+        }
+        
+        var updatedRace = races[raceIndex]
+        updatedRace.name = name
+        races[raceIndex] = updatedRace
+        saveRaces()
+    }
+    
+    func updateCompletedRaceDistance(for raceId: UUID, distance: Double) {
+        guard let raceIndex = races.firstIndex(where: { $0.id == raceId }), distance > 0 else {
+            return
+        }
+        
+        var updatedRace = races[raceIndex]
+        updatedRace.distance = distance
+        races[raceIndex] = updatedRace
+        saveRaces()
+    }
+    
     func updateCompletedRaceRunnerNumber(for raceId: UUID, runnerId: UUID, number: String) {
         guard let raceIndex = races.firstIndex(where: { $0.id == raceId }),
               let runnerIndex = races[raceIndex].runners.firstIndex(where: { $0.id == runnerId }) else {

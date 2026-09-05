@@ -153,6 +153,10 @@ struct RaceDetailView: View {
     @State private var pendingExportFormat: ExportFormat?
     @State private var shareItem: ExportShareItem?
     @State private var isEditMode = false
+    @State private var editingRaceName = false
+    @State private var tempRaceName = ""
+    @State private var editingRaceDistance = false
+    @State private var tempRaceDistance = ""
     
     // Get the current race data from RaceManager to ensure we have the latest updates
     private var currentRace: Race? {
@@ -165,13 +169,81 @@ struct RaceDetailView: View {
                 if let currentRace = currentRace {
                     // Header
                     VStack(spacing: 8) {
-                        Text(currentRace.name)
-                            .font(.title2)
-                            .fontWeight(.bold)
+                        if isEditMode {
+                            if editingRaceName {
+                                HStack {
+                                    TextField("Race name", text: $tempRaceName)
+                                        .font(.title2)
+                                        .fontWeight(.bold)
+                                        .multilineTextAlignment(.center)
+                                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                                        .onSubmit {
+                                            saveRaceName(for: currentRace.id)
+                                        }
+                                    
+                                    Button("Save") {
+                                        saveRaceName(for: currentRace.id)
+                                    }
+                                    .font(.caption)
+                                    .foregroundColor(.blue)
+                                }
+                            } else {
+                                Button(action: {
+                                    editingRaceName = true
+                                    tempRaceName = currentRace.name
+                                }) {
+                                    Text(currentRace.name.isEmpty ? "Tap to add race name" : currentRace.name)
+                                        .font(.title2)
+                                        .fontWeight(.bold)
+                                        .foregroundColor(currentRace.name.isEmpty ? .secondary : .primary)
+                                }
+                            }
+                        } else {
+                            Text(currentRace.name)
+                                .font(.title2)
+                                .fontWeight(.bold)
+                        }
                         
-                        Text("\(currentRace.distance, specifier: "%.1f") km • \(currentRace.dateCreated, style: .date)")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
+                        if isEditMode {
+                            if editingRaceDistance {
+                                HStack {
+                                    TextField("Distance (km)", text: $tempRaceDistance)
+                                        .font(.subheadline)
+                                        .multilineTextAlignment(.center)
+                                        .keyboardType(.decimalPad)
+                                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                                        .onChange(of: tempRaceDistance) { _, newValue in
+                                            let normalizedDistance = newValue.replacingOccurrences(of: ",", with: ".")
+                                            if normalizedDistance != newValue {
+                                                tempRaceDistance = normalizedDistance
+                                            }
+                                        }
+                                    
+                                    Text("km")
+                                        .font(.subheadline)
+                                        .foregroundColor(.secondary)
+                                    
+                                    Button("Save") {
+                                        saveRaceDistance(for: currentRace.id)
+                                    }
+                                    .font(.caption)
+                                    .foregroundColor(.blue)
+                                }
+                            } else {
+                                Button(action: {
+                                    editingRaceDistance = true
+                                    tempRaceDistance = String(format: "%.1f", currentRace.distance)
+                                }) {
+                                    Text("\(currentRace.distance, specifier: "%.1f") km • \(currentRace.dateCreated, style: .date)")
+                                        .font(.subheadline)
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                        } else {
+                            Text("\(currentRace.distance, specifier: "%.1f") km • \(currentRace.dateCreated, style: .date)")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                        }
                     }
                     .padding()
                     .background(Color(.systemGray6))
@@ -245,6 +317,12 @@ struct RaceDetailView: View {
                     HStack {
                         Button(action: {
                             isEditMode.toggle()
+                            if !isEditMode {
+                                editingRaceName = false
+                                tempRaceName = ""
+                                editingRaceDistance = false
+                                tempRaceDistance = ""
+                            }
                         }) {
                             Image(systemName: isEditMode ? "checkmark" : "pencil")
                                 .foregroundColor(isEditMode ? .green : .blue)
@@ -300,6 +378,22 @@ struct RaceDetailView: View {
         .sheet(item: $shareItem) { item in
             ShareSheet(activityItems: [item.url])
         }
+    }
+    
+    private func saveRaceName(for raceId: UUID) {
+        let trimmedName = tempRaceName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty else { return }
+        raceManager.updateCompletedRaceName(for: raceId, name: trimmedName)
+        editingRaceName = false
+    }
+    
+    private func saveRaceDistance(for raceId: UUID) {
+        let normalizedDistance = tempRaceDistance
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: ",", with: ".")
+        guard let distance = Double(normalizedDistance), distance > 0 else { return }
+        raceManager.updateCompletedRaceDistance(for: raceId, distance: distance)
+        editingRaceDistance = false
     }
     
     private func exportRace(as format: ExportFormat) {

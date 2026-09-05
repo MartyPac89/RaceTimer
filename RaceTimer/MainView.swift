@@ -27,46 +27,8 @@ struct MainView: View {
             .ignoresSafeArea()
             
             // Sport Silhouettes Background
-            VStack {
-                HStack {
-                    Spacer()
-                    Image(systemName: "figure.run")
-                        .font(.system(size: 60))
-                        .foregroundColor(.white.opacity(0.1))
-                        .rotationEffect(.degrees(-15))
-                        .offset(x: 20, y: -50)
-                }
-                
-                Spacer()
-                
-                HStack {
-                    Image(systemName: "figure.outdoor.cycle")
-                        .font(.system(size: 50))
-                        .foregroundColor(.white.opacity(0.08))
-                        .rotationEffect(.degrees(10))
-                        .offset(x: -30, y: 20)
-                    
-                    Spacer()
-                    
-                    Image(systemName: "figure.pool.swim")
-                        .font(.system(size: 45))
-                        .foregroundColor(.white.opacity(0.06))
-                        .rotationEffect(.degrees(-5))
-                        .offset(x: 40, y: -30)
-                }
-                
-                Spacer()
-                
-                HStack {
-                    Spacer()
-                    Image(systemName: "figure.run")
-                        .font(.system(size: 40))
-                        .foregroundColor(.white.opacity(0.05))
-                        .rotationEffect(.degrees(20))
-                        .offset(x: 10, y: 40)
-                }
-            }
-            .ignoresSafeArea()
+            SportBackgroundLayer()
+                .ignoresSafeArea()
             
             VStack(spacing: 40) {
                 Spacer()
@@ -152,6 +114,57 @@ struct MainView: View {
         .fullScreenCover(isPresented: $showingFinishedRaces) {
             FinishedRacesView()
                 .environmentObject(raceManager)
+        }
+    }
+}
+
+private struct SportBackgroundLayer: View {
+    private struct IconSpec: Identifiable {
+        let id: String
+        let name: String
+        let size: CGFloat
+        let opacity: Double
+        let rotation: Double
+        let xRatio: CGFloat
+        let yRatio: CGFloat
+    }
+
+    private let icons: [IconSpec] = [
+        IconSpec(id: "run-top-right", name: "figure.run", size: 60, opacity: 0.10, rotation: -15, xRatio: 0.88, yRatio: 0.07),
+        IconSpec(id: "flag-top-left", name: "flag.checkered", size: 44, opacity: 0.07, rotation: -8, xRatio: 0.10, yRatio: 0.10),
+        IconSpec(id: "stopwatch-top", name: "stopwatch", size: 36, opacity: 0.05, rotation: 5, xRatio: 0.52, yRatio: 0.05),
+        IconSpec(id: "walk-upper", name: "figure.walk", size: 38, opacity: 0.06, rotation: 12, xRatio: 0.22, yRatio: 0.18),
+        IconSpec(id: "cycle-upper", name: "figure.outdoor.cycle", size: 50, opacity: 0.08, rotation: 10, xRatio: 0.78, yRatio: 0.16),
+        IconSpec(id: "trophy-upper", name: "trophy", size: 34, opacity: 0.05, rotation: 14, xRatio: 0.58, yRatio: 0.22),
+        IconSpec(id: "swim-mid-right", name: "figure.pool.swim", size: 45, opacity: 0.06, rotation: -5, xRatio: 0.92, yRatio: 0.32),
+        IconSpec(id: "hike-mid-left", name: "figure.hiking", size: 42, opacity: 0.07, rotation: -18, xRatio: 0.08, yRatio: 0.36),
+        IconSpec(id: "medal-mid", name: "medal", size: 32, opacity: 0.05, rotation: -6, xRatio: 0.38, yRatio: 0.40),
+        IconSpec(id: "run-mid", name: "figure.run", size: 52, opacity: 0.04, rotation: -10, xRatio: 0.65, yRatio: 0.44),
+        IconSpec(id: "soccer-lower-mid", name: "figure.soccer", size: 48, opacity: 0.07, rotation: -12, xRatio: 0.14, yRatio: 0.55),
+        IconSpec(id: "basketball-lower-mid", name: "figure.basketball", size: 46, opacity: 0.06, rotation: 8, xRatio: 0.84, yRatio: 0.58),
+        IconSpec(id: "cycle-lower", name: "figure.outdoor.cycle", size: 36, opacity: 0.04, rotation: -22, xRatio: 0.48, yRatio: 0.62),
+        IconSpec(id: "run-lower", name: "figure.run", size: 40, opacity: 0.05, rotation: 20, xRatio: 0.72, yRatio: 0.70),
+        IconSpec(id: "ski-bottom-right", name: "figure.skiing.downhill", size: 44, opacity: 0.06, rotation: 15, xRatio: 0.90, yRatio: 0.82),
+        IconSpec(id: "swim-bottom-left", name: "figure.pool.swim", size: 38, opacity: 0.05, rotation: 6, xRatio: 0.12, yRatio: 0.86),
+        IconSpec(id: "cycle-bottom", name: "figure.outdoor.cycle", size: 42, opacity: 0.05, rotation: -14, xRatio: 0.35, yRatio: 0.92),
+        IconSpec(id: "run-bottom", name: "figure.run", size: 48, opacity: 0.04, rotation: 18, xRatio: 0.62, yRatio: 0.95),
+        IconSpec(id: "flag-bottom-right", name: "flag.checkered", size: 36, opacity: 0.04, rotation: 10, xRatio: 0.78, yRatio: 0.90)
+    ]
+
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack {
+                ForEach(icons) { icon in
+                    Image(systemName: icon.name)
+                        .font(.system(size: icon.size))
+                        .foregroundColor(.white.opacity(icon.opacity))
+                        .rotationEffect(.degrees(icon.rotation))
+                        .position(
+                            x: geometry.size.width * icon.xRatio,
+                            y: geometry.size.height * icon.yRatio
+                        )
+                }
+            }
         }
     }
 }
