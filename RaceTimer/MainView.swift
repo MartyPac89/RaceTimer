@@ -146,7 +146,7 @@ struct MainView: View {
         }
         .environmentObject(raceManager)
         .fullScreenCover(isPresented: $showingNewRace) {
-            NewRaceSetupView()
+            NewRaceSetupView(isPresented: $showingNewRace)
                 .environmentObject(raceManager)
         }
         .fullScreenCover(isPresented: $showingFinishedRaces) {

@@ -14,8 +14,8 @@ struct RaceTimingView: View {
     @State private var showingFinishAlert = false
     @State private var showingAbandonAlert = false
     @State private var showingExportOptions = false
-    @State private var showingShareSheet = false
-    @State private var shareURL: URL?
+    @State private var pendingExportFormat: ExportFormat?
+    @State private var shareItem: ExportShareItem?
     @State private var isRaceFinished = false
     @State private var tempRunners: [Runner] = []
     @State private var completedRace: Race?
@@ -145,23 +145,28 @@ struct RaceTimingView: View {
         } message: {
             Text("The race is still running. Leaving will discard timing for this race.")
         }
-        .confirmationDialog("Save The Report", isPresented: $showingExportOptions, titleVisibility: .visible) {
+        .alert("Save The Report", isPresented: $showingExportOptions) {
             Button("PDF") {
-                exportCompletedRace(as: .pdf)
+                pendingExportFormat = .pdf
             }
             Button("JPEG") {
-                exportCompletedRace(as: .jpeg)
+                pendingExportFormat = .jpeg
             }
-            Button("Cancel", role: .cancel) { }
+            Button("Cancel", role: .cancel) {
+                pendingExportFormat = nil
+            }
         } message: {
             Text("Choose a format for this race report.")
         }
-        .sheet(isPresented: $showingShareSheet, onDismiss: {
-            shareURL = nil
-        }) {
-            if let shareURL {
-                ShareSheet(activityItems: [shareURL])
+        .onChange(of: showingExportOptions) { _, isShowing in
+            guard !isShowing, let format = pendingExportFormat else { return }
+            pendingExportFormat = nil
+            DispatchQueue.main.async {
+                exportCompletedRace(as: format)
             }
+        }
+        .sheet(item: $shareItem) { item in
+            ShareSheet(activityItems: [item.url])
         }
         .onAppear(perform: setupView)
         .onDisappear {
@@ -264,8 +269,9 @@ struct RaceTimingView: View {
             .padding(.horizontal, 20)
             
             Button(action: {
+                // Parent closes the entire new-race stack; don't dismiss timing alone
+                // or setup flashes before MainView.
                 exitAction = .backToMenu
-                dismiss()
             }) {
                 HStack {
                     Image(systemName: "house.fill")
@@ -363,8 +369,7 @@ struct RaceTimingView: View {
         
         do {
             try data.write(to: url, options: .atomic)
-            shareURL = url
-            showingShareSheet = true
+            shareItem = ExportShareItem(url: url)
         } catch {
             // Skip share sheet if the file could not be written.
         }

@@ -150,8 +150,8 @@ struct RaceDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var showingDeleteAlert = false
     @State private var showingExportOptions = false
-    @State private var showingShareSheet = false
-    @State private var shareURL: URL?
+    @State private var pendingExportFormat: ExportFormat?
+    @State private var shareItem: ExportShareItem?
     @State private var isEditMode = false
     
     // Get the current race data from RaceManager to ensure we have the latest updates
@@ -275,23 +275,30 @@ struct RaceDetailView: View {
         } message: {
             Text("Are you sure you want to delete this race? This action cannot be undone.")
         }
-        .confirmationDialog("Download Race Report", isPresented: $showingExportOptions, titleVisibility: .visible) {
+        .alert("Download Race Report", isPresented: $showingExportOptions) {
             Button("PDF") {
-                exportRace(as: .pdf)
+                pendingExportFormat = .pdf
             }
             Button("JPEG") {
-                exportRace(as: .jpeg)
+                pendingExportFormat = .jpeg
             }
-            Button("Cancel", role: .cancel) { }
+            Button("Cancel", role: .cancel) {
+                pendingExportFormat = nil
+            }
         } message: {
             Text("Choose a format for this race report.")
         }
-        .sheet(isPresented: $showingShareSheet, onDismiss: {
-            shareURL = nil
-        }) {
-            if let shareURL {
-                ShareSheet(activityItems: [shareURL])
+        .onChange(of: showingExportOptions) { _, isShowing in
+            // Wait until the format dialog fully dismisses, otherwise the share sheet
+            // presents empty on the first attempt.
+            guard !isShowing, let format = pendingExportFormat else { return }
+            pendingExportFormat = nil
+            DispatchQueue.main.async {
+                exportRace(as: format)
             }
+        }
+        .sheet(item: $shareItem) { item in
+            ShareSheet(activityItems: [item.url])
         }
     }
     
@@ -322,8 +329,7 @@ struct RaceDetailView: View {
         
         do {
             try data.write(to: url, options: .atomic)
-            shareURL = url
-            showingShareSheet = true
+            shareItem = ExportShareItem(url: url)
         } catch {
             // Keep silent in UI; generation failure simply skips the share sheet.
         }
@@ -617,6 +623,11 @@ struct EditableResultRowView: View {
         default: return Color.clear
         }
     }
+}
+
+struct ExportShareItem: Identifiable {
+    let id = UUID()
+    let url: URL
 }
 
 struct ShareSheet: UIViewControllerRepresentable {

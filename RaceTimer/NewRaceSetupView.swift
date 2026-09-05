@@ -8,8 +8,8 @@
 import SwiftUI
 
 struct NewRaceSetupView: View {
+    @Binding var isPresented: Bool
     @EnvironmentObject var raceManager: RaceManager
-    @Environment(\.dismiss) private var dismiss
     
     @State private var raceName = ""
     @State private var distance = ""
@@ -89,7 +89,7 @@ struct NewRaceSetupView: View {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("Back") {
                         raceManager.abandonCurrentRace()
-                        dismiss()
+                        isPresented = false
                     }
                 }
             }
@@ -121,8 +121,9 @@ struct NewRaceSetupView: View {
             numberOfRunners = ""
             timingExitAction = .none
         case .backToMenu:
+            // Dismiss the root new-race cover only — nested timing goes away with it.
             timingExitAction = .none
-            dismiss()
+            isPresented = false
         }
     }
     
@@ -148,6 +149,6 @@ struct NewRaceSetupView: View {
 }
 
 #Preview {
-    NewRaceSetupView()
+    NewRaceSetupView(isPresented: .constant(true))
         .environmentObject(RaceManager())
 }
