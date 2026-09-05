@@ -280,10 +280,17 @@ class RaceManager: ObservableObject {
         let pageWidth = margin * 2 + contentWidth
         var y = startY
         
-        // Brand / logo
+        // Brand / logo — keep original aspect ratio inside a max box
         if let logoImage = UIImage(named: "logo") {
-            let logoSize = CGSize(width: 88, height: 44)
-            logoImage.draw(in: CGRect(x: margin, y: y, width: logoSize.width, height: logoSize.height))
+            let maxLogoSize = CGSize(width: 88, height: 44)
+            let aspect = logoImage.size.width / max(logoImage.size.height, 1)
+            var logoWidth = maxLogoSize.width
+            var logoHeight = logoWidth / aspect
+            if logoHeight > maxLogoSize.height {
+                logoHeight = maxLogoSize.height
+                logoWidth = logoHeight * aspect
+            }
+            logoImage.draw(in: CGRect(x: margin, y: y, width: logoWidth, height: logoHeight))
         } else {
             let brand = NSAttributedString(
                 string: "RaceTimer",
