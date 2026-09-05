@@ -22,13 +22,24 @@ class RaceManager: ObservableObject {
     }
     
     func startRace() {
+        guard !isRaceStarted else { return }
         raceStartTime = Date()
         isRaceStarted = true
     }
     
     func createNewRace(name: String, distance: Double, numberOfRunners: Int) {
+        // Always start clean so an abandoned race can't leak its clock into the next one.
+        raceStartTime = nil
+        isRaceStarted = false
         let race = Race(name: name, distance: distance, numberOfRunners: numberOfRunners)
         currentRace = race
+    }
+    
+    /// Clears in-progress race state without saving. Safe to call repeatedly.
+    func abandonCurrentRace() {
+        currentRace = nil
+        raceStartTime = nil
+        isRaceStarted = false
     }
     
     func recordTime(for runnerIndex: Int) {
@@ -54,37 +65,21 @@ class RaceManager: ObservableObject {
     func finishRace() {
         guard var race = currentRace else { return }
         
-        print("=== FINISH RACE DEBUG ===")
-        print("Race runners before processing: \(race.runners.map { "\($0.runnerNumber): \($0.runnerName) - finishTime: \($0.finishTime != nil ? "EXISTS" : "NIL")" })")
-        print("Race start time: \(raceStartTime)")
-        
         race.isCompleted = true
         race.raceStartTime = raceStartTime
         
-        print("Race start time set to: \(race.raceStartTime)")
-        
-        // Assign finish places based on finish times
         let sortedRunners = race.sortedRunners
-        print("Sorted runners: \(sortedRunners.map { "\($0.runnerNumber): \($0.runnerName) - finishTime: \($0.finishTime != nil ? "EXISTS" : "NIL")" })")
-        
         for (index, runner) in sortedRunners.enumerated() {
             if let runnerIndex = race.runners.firstIndex(where: { $0.id == runner.id }) {
                 race.runners[runnerIndex].finishPlace = index + 1
-                print("Assigned place \(index + 1) to runner \(race.runners[runnerIndex].runnerName)")
             }
         }
         
-        print("Race runners after processing: \(race.runners.map { "\($0.runnerNumber): \($0.runnerName) - finishTime: \($0.finishTime != nil ? "EXISTS" : "NIL") - place: \($0.finishPlace)" })")
-        
         races.append(race)
-        print("Race added to races array. Total races: \(races.count)")
-        
         currentRace = nil
         raceStartTime = nil
         isRaceStarted = false
         saveRaces()
-        
-        print("Race saved to UserDefaults")
     }
     
     func deleteRace(_ race: Race) {
@@ -93,45 +88,27 @@ class RaceManager: ObservableObject {
     }
     
     func updateCompletedRaceRunnerNumber(for raceId: UUID, runnerId: UUID, number: String) {
-        print("RaceManager: Updating runner number to '\(number)' for runner \(runnerId)")
         guard let raceIndex = races.firstIndex(where: { $0.id == raceId }),
-              let runnerIndex = races[raceIndex].runners.firstIndex(where: { $0.id == runnerId }) else { 
-            print("RaceManager: Failed to find race or runner")
-            return 
+              let runnerIndex = races[raceIndex].runners.firstIndex(where: { $0.id == runnerId }) else {
+            return
         }
         
-        print("RaceManager: Found race at index \(raceIndex), runner at index \(runnerIndex)")
-        print("RaceManager: Before update - runner number: '\(races[raceIndex].runners[runnerIndex].runnerNumber)'")
-        
-        // Create a new race object to trigger @Published update
         var updatedRace = races[raceIndex]
         updatedRace.runners[runnerIndex].runnerNumber = number
         races[raceIndex] = updatedRace
-        
-        print("RaceManager: After update - runner number: '\(races[raceIndex].runners[runnerIndex].runnerNumber)'")
         saveRaces()
-        print("RaceManager: Data saved")
     }
     
     func updateCompletedRaceRunnerName(for raceId: UUID, runnerId: UUID, name: String) {
-        print("RaceManager: Updating runner name to '\(name)' for runner \(runnerId)")
         guard let raceIndex = races.firstIndex(where: { $0.id == raceId }),
-              let runnerIndex = races[raceIndex].runners.firstIndex(where: { $0.id == runnerId }) else { 
-            print("RaceManager: Failed to find race or runner")
-            return 
+              let runnerIndex = races[raceIndex].runners.firstIndex(where: { $0.id == runnerId }) else {
+            return
         }
         
-        print("RaceManager: Found race at index \(raceIndex), runner at index \(runnerIndex)")
-        print("RaceManager: Before update - runner name: '\(races[raceIndex].runners[runnerIndex].runnerName)'")
-        
-        // Create a new race object to trigger @Published update
         var updatedRace = races[raceIndex]
         updatedRace.runners[runnerIndex].runnerName = name
         races[raceIndex] = updatedRace
-        
-        print("RaceManager: After update - runner name: '\(races[raceIndex].runners[runnerIndex].runnerName)'")
         saveRaces()
-        print("RaceManager: Data saved")
     }
     
     func generatePDF(for race: Race) -> Data? {
@@ -295,14 +272,6 @@ class RaceManager: ObservableObject {
         if let data = userDefaults.data(forKey: racesKey),
            let decoded = try? JSONDecoder().decode([Race].self, from: data) {
             races = decoded
-            print("=== LOAD RACES DEBUG ===")
-            print("Loaded \(races.count) races from UserDefaults")
-            for (index, race) in races.enumerated() {
-                print("Race \(index): \(race.name) - \(race.runners.count) runners")
-                for runner in race.runners {
-                    print("  Runner: \(runner.runnerNumber): \(runner.runnerName) - finishTime: \(runner.finishTime != nil ? "EXISTS" : "NIL")")
-                }
-            }
         }
     }
 }

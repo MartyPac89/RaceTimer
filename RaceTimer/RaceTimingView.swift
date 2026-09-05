@@ -6,8 +6,7 @@ struct RaceTimingView: View {
     @Environment(\.dismiss) private var dismiss
     
     @State private var showingFinishAlert = false
-    @State private var elapsedTime: TimeInterval = 0
-    @State private var timer: Timer?
+    @State private var showingAbandonAlert = false
     @State private var isRaceFinished = false
     @State private var tempRunners: [Runner] = []
     
@@ -16,7 +15,7 @@ struct RaceTimingView: View {
     }
     
     private var allRunnersHaveFinishTimes: Bool {
-        tempRunners.allSatisfy { $0.finishTime != nil }
+        !tempRunners.isEmpty && tempRunners.allSatisfy { $0.finishTime != nil }
     }
     
     private var sortedRunners: [Runner] {
@@ -38,18 +37,12 @@ struct RaceTimingView: View {
                         .font(.headline)
                         .foregroundColor(.secondary)
                     
-                    if raceManager.isRaceStarted {
-                        Text(formatTimeInterval(elapsedTime))
-                            .font(.largeTitle)
-                            .fontWeight(.bold)
-                            .foregroundColor(allRunnersHaveFinishTimes ? .green : .blue)
-                            .monospacedDigit()
-                        
-                        if allRunnersHaveFinishTimes {
-                            Text("All runners finished!")
-                                .font(.caption)
-                                .foregroundColor(.green)
-                        }
+                    if raceManager.isRaceStarted, let startTime = raceManager.raceStartTime {
+                        // Clock lives in its own view so 100Hz ticks don't rebuild TextFields.
+                        RaceElapsedTimeView(
+                            startTime: startTime,
+                            isComplete: allRunnersHaveFinishTimes
+                        )
                     }
                 }
                 .padding()
@@ -71,17 +64,26 @@ struct RaceTimingView: View {
                 
                 ScrollView {
                     LazyVStack(spacing: 0) {
-                        ForEach(sortedRunners.indices, id: \.self) { index in
-                            let runner = sortedRunners[index]
-                            RunnerRowView(
-                                runner: runner,
-                                index: index,
-                                raceStartTime: raceManager.raceStartTime,
-                                isRaceFinished: isRaceFinished
-                            ) { newNumber in
-                                if let tempIndex = tempRunners.firstIndex(where: { $0.id == runner.id }) {
-                                    tempRunners[tempIndex].runnerNumber = newNumber
-                                }
+                        if isRaceFinished {
+                            ForEach(Array(sortedRunners.enumerated()), id: \.element.id) { index, runner in
+                                RunnerRowView(
+                                    place: index + 1,
+                                    finishTime: runner.finishTime,
+                                    raceStartTime: raceManager.raceStartTime,
+                                    runnerNumber: .constant(runner.runnerNumber),
+                                    isRaceFinished: true
+                                )
+                            }
+                        } else {
+                            // Bind directly into tempRunners so focus survives typing + list updates.
+                            ForEach($tempRunners) { $runner in
+                                RunnerRowView(
+                                    place: place(for: runner.id),
+                                    finishTime: runner.finishTime,
+                                    raceStartTime: raceManager.raceStartTime,
+                                    runnerNumber: $runner.runnerNumber,
+                                    isRaceFinished: false
+                                )
                             }
                         }
                     }
@@ -91,7 +93,6 @@ struct RaceTimingView: View {
                     if !raceManager.isRaceStarted {
                         Button(action: {
                             raceManager.startRace()
-                            startTimer()
                         }) {
                             HStack {
                                 Image(systemName: "play.circle.fill")
@@ -170,7 +171,7 @@ struct RaceTimingView: View {
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("Back") {
-                        dismiss()
+                        handleBack()
                     }
                 }
             }
@@ -184,22 +185,48 @@ struct RaceTimingView: View {
         } message: {
             Text("Save race results with entered runner numbers?")
         }
+        .alert("Leave Race?", isPresented: $showingAbandonAlert) {
+            Button("Cancel", role: .cancel) { }
+            Button("Leave", role: .destructive) {
+                abandonAndDismiss()
+            }
+        } message: {
+            Text("The race is still running. Leaving will discard timing for this race.")
+        }
         .onAppear(perform: setupView)
-        .onDisappear(perform: stopTimer)
-        .onChange(of: allRunnersHaveFinishTimes) { _, newValue in
-            if newValue && raceManager.isRaceStarted {
-                stopTimer()
+        .onDisappear {
+            if !isRaceFinished {
+                raceManager.abandonCurrentRace()
             }
         }
     }
     
+    private func place(for runnerId: UUID) -> Int {
+        (tempRunners.firstIndex(where: { $0.id == runnerId }) ?? 0) + 1
+    }
+    
+    private func handleBack() {
+        if isRaceFinished {
+            dismiss()
+        } else if raceManager.isRaceStarted {
+            showingAbandonAlert = true
+        } else {
+            abandonAndDismiss()
+        }
+    }
+    
+    private func abandonAndDismiss() {
+        raceManager.abandonCurrentRace()
+        dismiss()
+    }
+    
     private func recordTime() {
-        guard raceManager.isRaceStarted else { return }
+        guard raceManager.isRaceStarted, let startTime = raceManager.raceStartTime else { return }
         
         for (index, runner) in tempRunners.enumerated() {
             if runner.finishTime == nil {
-                let elapsedTime = Date().timeIntervalSince(raceManager.raceStartTime!)
-                tempRunners[index].finishTime = raceManager.raceStartTime!.addingTimeInterval(elapsedTime)
+                let elapsed = Date().timeIntervalSince(startTime)
+                tempRunners[index].finishTime = startTime.addingTimeInterval(elapsed)
                 break
             }
         }
@@ -208,10 +235,6 @@ struct RaceTimingView: View {
     private func setupView() {
         if let race = currentRace {
             tempRunners = race.runners
-        }
-        
-        if raceManager.isRaceStarted {
-            startTimer()
         }
     }
     
@@ -224,19 +247,53 @@ struct RaceTimingView: View {
         isRaceFinished = true
         raceManager.finishRace()
     }
+}
+
+/// Display-only clock. Uses TimelineView so scrolling the runner list
+/// (UITrackingRunLoopMode) cannot pause a Timer scheduled in .default mode.
+private struct RaceElapsedTimeView: View {
+    let startTime: Date
+    let isComplete: Bool
     
-    private func startTimer() {
-        timer?.invalidate()
-        timer = Timer.scheduledTimer(withTimeInterval: 0.01, repeats: true) { _ in
-            if let startTime = raceManager.raceStartTime {
-                elapsedTime = Date().timeIntervalSince(startTime)
+    @State private var frozenElapsed: TimeInterval?
+    
+    var body: some View {
+        VStack(spacing: 4) {
+            if let frozenElapsed {
+                timeLabel(elapsed: frozenElapsed, complete: true)
+            } else {
+                TimelineView(.periodic(from: startTime, by: 0.01)) { context in
+                    timeLabel(
+                        elapsed: context.date.timeIntervalSince(startTime),
+                        complete: false
+                    )
+                }
+            }
+            
+            if isComplete {
+                Text("All runners finished!")
+                    .font(.caption)
+                    .foregroundColor(.green)
+            }
+        }
+        .onChange(of: isComplete) { _, complete in
+            if complete {
+                frozenElapsed = Date().timeIntervalSince(startTime)
+            }
+        }
+        .onAppear {
+            if isComplete {
+                frozenElapsed = Date().timeIntervalSince(startTime)
             }
         }
     }
     
-    private func stopTimer() {
-        timer?.invalidate()
-        timer = nil
+    private func timeLabel(elapsed: TimeInterval, complete: Bool) -> some View {
+        Text(formatTimeInterval(elapsed))
+            .font(.largeTitle)
+            .fontWeight(.bold)
+            .foregroundColor(complete ? .green : .blue)
+            .monospacedDigit()
     }
     
     private func formatTimeInterval(_ interval: TimeInterval) -> String {
@@ -248,24 +305,14 @@ struct RaceTimingView: View {
 }
 
 struct RunnerRowView: View {
-    let runner: Runner
-    let index: Int
+    let place: Int
+    let finishTime: Date?
     let raceStartTime: Date?
+    @Binding var runnerNumber: String
     let isRaceFinished: Bool
-    let onNumberChange: (String) -> Void
-    @State private var runnerNumber: String
-    
-    init(runner: Runner, index: Int, raceStartTime: Date?, isRaceFinished: Bool, onNumberChange: @escaping (String) -> Void) {
-        self.runner = runner
-        self.index = index
-        self.raceStartTime = raceStartTime
-        self.isRaceFinished = isRaceFinished
-        self.onNumberChange = onNumberChange
-        _runnerNumber = State(initialValue: runner.runnerNumber)
-    }
     
     private var displayTime: String {
-        guard let finishTime = runner.finishTime, let startTime = raceStartTime else {
+        guard let finishTime = finishTime, let startTime = raceStartTime else {
             return "--:--.--"
         }
         let interval = finishTime.timeIntervalSince(startTime)
@@ -277,7 +324,7 @@ struct RunnerRowView: View {
     
     var body: some View {
         HStack {
-            Text("\(index + 1)")
+            Text("\(place)")
                 .frame(width: 60, alignment: .center)
                 .font(.body)
             
@@ -292,16 +339,7 @@ struct RunnerRowView: View {
                 .keyboardType(.numberPad)
                 .multilineTextAlignment(.center)
                 .disabled(isRaceFinished)
-                .onChange(of: runnerNumber) { _, newValue in
-                    onNumberChange(newValue)
-                }
         }
         .padding(.vertical, 5)
-        .onAppear {
-            runnerNumber = runner.runnerNumber
-        }
-        .onChange(of: runner.runnerNumber) { _, newValue in
-            runnerNumber = newValue
-        }
     }
 }

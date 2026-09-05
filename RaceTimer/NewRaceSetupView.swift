@@ -88,6 +88,7 @@ struct NewRaceSetupView: View {
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("Back") {
+                        raceManager.abandonCurrentRace()
                         dismiss()
                     }
                 }
@@ -103,6 +104,12 @@ struct NewRaceSetupView: View {
                 dismiss()
             }
         }
+        .onDisappear {
+            // Only clear when leaving setup itself — not while the timing cover is up.
+            if !raceFinished && !showingRaceTiming {
+                raceManager.abandonCurrentRace()
+            }
+        }
     }
     
     private func startRace() {
@@ -112,6 +119,7 @@ struct NewRaceSetupView: View {
               runnerCount > 0 else { return }
         
         raceManager.createNewRace(name: raceName, distance: distanceValue, numberOfRunners: runnerCount)
+        raceFinished = false
         showingRaceTiming = true
     }
     
