@@ -7,16 +7,25 @@
 
 import Foundation
 
+enum Gender: String, Codable, CaseIterable, Identifiable {
+    case F
+    case M
+    
+    var id: String { rawValue }
+}
+
 struct Runner: Identifiable, Codable {
     var id = UUID()
     var runnerNumber: String
     var runnerName: String
+    var gender: Gender?
     var finishTime: Date?
     var finishPlace: Int?
     
-    init(runnerNumber: String = "", runnerName: String = "") {
+    init(runnerNumber: String = "", runnerName: String = "", gender: Gender? = nil) {
         self.runnerNumber = runnerNumber
         self.runnerName = runnerName
+        self.gender = gender
         self.finishTime = nil
         self.finishPlace = nil
     }

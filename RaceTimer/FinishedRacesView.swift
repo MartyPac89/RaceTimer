@@ -145,6 +145,30 @@ struct RaceDetailView: View {
         case jpeg
     }
     
+    enum ResultsListKind: Int, CaseIterable, Identifiable {
+        case all
+        case women
+        case men
+        
+        var id: Int { rawValue }
+        
+        var title: String {
+            switch self {
+            case .all: return "All Runners"
+            case .women: return "Women"
+            case .men: return "Men"
+            }
+        }
+        
+        var emptyMessage: String {
+            switch self {
+            case .all: return "No runners"
+            case .women: return "No women in this race"
+            case .men: return "No men in this race"
+            }
+        }
+    }
+    
     let race: Race
     @EnvironmentObject var raceManager: RaceManager
     @Environment(\.dismiss) private var dismiss
@@ -157,6 +181,8 @@ struct RaceDetailView: View {
     @State private var tempRaceName = ""
     @State private var editingRaceDistance = false
     @State private var tempRaceDistance = ""
+    @State private var selectedRunnerIds: Set<UUID> = []
+    @State private var selectedListKind: ResultsListKind = .all
     
     // Get the current race data from RaceManager to ensure we have the latest updates
     private var currentRace: Race? {
@@ -244,55 +270,51 @@ struct RaceDetailView: View {
                                 .font(.subheadline)
                                 .foregroundColor(.secondary)
                         }
+                        
+                        Text(selectedListKind.title)
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.blue)
                     }
                     .padding()
                     .background(Color(.systemGray6))
                 
-                    // Results Table
-                    VStack(spacing: 0) {
-                        // Table Header
-                        HStack(spacing: 0) {
-                            Text("Place")
-                                .font(.headline)
-                                .frame(minWidth: 0, maxWidth: .infinity, alignment: .center)
+                    TabView(selection: $selectedListKind) {
+                        ForEach(ResultsListKind.allCases) { kind in
+                            resultsPage(for: kind, race: currentRace)
+                                .tag(kind)
+                        }
+                    }
+                    .tabViewStyle(.page(indexDisplayMode: .always))
+                    .indexViewStyle(.page(backgroundDisplayMode: .always))
+                    .onChange(of: selectedListKind) { _, _ in
+                        selectedRunnerIds.removeAll()
+                    }
+                    
+                    if isEditMode {
+                        HStack(spacing: 12) {
+                            Text(selectedRunnerIds.isEmpty
+                                  ? "Select runners"
+                                  : "\(selectedRunnerIds.count) selected")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
                             
-                            Text("Time")
-                                .font(.headline)
-                                .frame(minWidth: 0, maxWidth: .infinity, alignment: .center)
+                            Spacer()
                             
-                            Text("PACE/KM")
-                                .font(.headline)
-                                .frame(minWidth: 0, maxWidth: .infinity, alignment: .center)
+                            Button("Set F") {
+                                applyBulkGender(.F, for: currentRace.id)
+                            }
+                            .buttonStyle(.bordered)
+                            .disabled(selectedRunnerIds.isEmpty)
                             
-                            Text("Runner #")
-                                .font(.headline)
-                                .frame(minWidth: 0, maxWidth: .infinity, alignment: .center)
-                            
-                            Text("Runner Name")
-                                .font(.headline)
-                                .frame(minWidth: 0, maxWidth: .infinity, alignment: .center)
+                            Button("Set M") {
+                                applyBulkGender(.M, for: currentRace.id)
+                            }
+                            .buttonStyle(.bordered)
+                            .disabled(selectedRunnerIds.isEmpty)
                         }
                         .padding()
-                        .background(Color(.systemGray5))
-                        
-                        // Results
-                        ScrollView {
-                            LazyVStack(spacing: 0) {
-                                ForEach(Array(currentRace.sortedRunners.enumerated()), id: \.element.id) { index, runner in
-                                    if isEditMode {
-                                        EditableResultRowView(
-                                            runner: runner, 
-                                            place: index + 1, 
-                                            raceStartTime: currentRace.raceStartTime, 
-                                            raceDistance: currentRace.distance,
-                                            raceId: currentRace.id
-                                        )
-                                    } else {
-                                        ResultRowView(runner: runner, place: index + 1, raceStartTime: currentRace.raceStartTime, raceDistance: currentRace.distance)
-                                    }
-                                }
-                            }
-                        }
+                        .background(Color(.systemGray6))
                     }
                 } else {
                     // Race not found
@@ -322,6 +344,7 @@ struct RaceDetailView: View {
                                 tempRaceName = ""
                                 editingRaceDistance = false
                                 tempRaceDistance = ""
+                                selectedRunnerIds.removeAll()
                             }
                         }) {
                             Image(systemName: isEditMode ? "checkmark" : "pencil")
@@ -380,6 +403,97 @@ struct RaceDetailView: View {
         }
     }
     
+    @ViewBuilder
+    private func resultsPage(for kind: ResultsListKind, race: Race) -> some View {
+        let runners = filteredRunners(for: kind, from: race)
+        
+        VStack(spacing: 0) {
+            HStack(spacing: 0) {
+                if isEditMode {
+                    Color.clear
+                        .frame(width: 28)
+                }
+                
+                Text("Place")
+                    .font(.headline)
+                    .frame(minWidth: 0, maxWidth: .infinity, alignment: .center)
+                
+                Text("Time")
+                    .font(.headline)
+                    .frame(minWidth: 0, maxWidth: .infinity, alignment: .center)
+                
+                Text("PACE/KM")
+                    .font(.headline)
+                    .frame(minWidth: 0, maxWidth: .infinity, alignment: .center)
+                
+                Text("Runner #")
+                    .font(.headline)
+                    .frame(minWidth: 0, maxWidth: .infinity, alignment: .center)
+                
+                Text("Name")
+                    .font(.headline)
+                    .frame(minWidth: 0, maxWidth: .infinity, alignment: .center)
+                
+                Text("Gender")
+                    .font(.headline)
+                    .frame(width: 56, alignment: .center)
+            }
+            .padding()
+            .background(Color(.systemGray5))
+            
+            if runners.isEmpty {
+                VStack(spacing: 12) {
+                    Image(systemName: "person.3")
+                        .font(.system(size: 36))
+                        .foregroundColor(.secondary)
+                    Text(kind.emptyMessage)
+                        .font(.body)
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(Array(runners.enumerated()), id: \.element.id) { index, runner in
+                            if isEditMode {
+                                EditableResultRowView(
+                                    runner: runner,
+                                    place: index + 1,
+                                    raceStartTime: race.raceStartTime,
+                                    raceDistance: race.distance,
+                                    raceId: race.id,
+                                    isSelected: selectedRunnerIds.contains(runner.id),
+                                    onToggleSelection: {
+                                        toggleSelection(for: runner.id)
+                                    }
+                                )
+                            } else {
+                                ResultRowView(
+                                    runner: runner,
+                                    place: index + 1,
+                                    raceStartTime: race.raceStartTime,
+                                    raceDistance: race.distance
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    private func filteredRunners(for kind: ResultsListKind, from race: Race) -> [Runner] {
+        let sorted = race.sortedRunners
+        switch kind {
+        case .all:
+            return sorted
+        case .women:
+            return sorted.filter { $0.gender == .F }
+        case .men:
+            return sorted.filter { $0.gender == .M }
+        }
+    }
+    
     private func saveRaceName(for raceId: UUID) {
         let trimmedName = tempRaceName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedName.isEmpty else { return }
@@ -394,6 +508,19 @@ struct RaceDetailView: View {
         guard let distance = Double(normalizedDistance), distance > 0 else { return }
         raceManager.updateCompletedRaceDistance(for: raceId, distance: distance)
         editingRaceDistance = false
+    }
+    
+    private func toggleSelection(for runnerId: UUID) {
+        if selectedRunnerIds.contains(runnerId) {
+            selectedRunnerIds.remove(runnerId)
+        } else {
+            selectedRunnerIds.insert(runnerId)
+        }
+    }
+    
+    private func applyBulkGender(_ gender: Gender, for raceId: UUID) {
+        raceManager.updateCompletedRaceRunnersGender(for: raceId, runnerIds: selectedRunnerIds, gender: gender)
+        selectedRunnerIds.removeAll()
     }
     
     private func exportRace(as format: ExportFormat) {
@@ -474,6 +601,12 @@ struct ResultRowView: View {
                 .font(.system(.body, design: .monospaced))
                 .frame(minWidth: 0, maxWidth: .infinity, alignment: .center)
                 .foregroundColor(.primary)
+            
+            // Gender
+            Text(runner.gender?.rawValue ?? "—")
+                .font(.system(.body, design: .monospaced))
+                .frame(width: 56, alignment: .center)
+                .foregroundColor(.primary)
         }
         .padding(.vertical, 8)
         .padding(.horizontal, 16)
@@ -546,6 +679,8 @@ struct EditableResultRowView: View {
     let raceStartTime: Date?
     let raceDistance: Double
     let raceId: UUID
+    let isSelected: Bool
+    let onToggleSelection: () -> Void
     @EnvironmentObject var raceManager: RaceManager
     @State private var editingRunnerNumber = false
     @State private var editingRunnerName = false
@@ -564,8 +699,28 @@ struct EditableResultRowView: View {
         return runner
     }
     
+    private var genderBinding: Binding<Gender?> {
+        Binding(
+            get: { displayRunner.gender },
+            set: { newValue in
+                raceManager.updateCompletedRaceRunnerGender(
+                    for: raceId,
+                    runnerId: displayRunner.id,
+                    gender: newValue
+                )
+            }
+        )
+    }
+    
     var body: some View {
         HStack(spacing: 0) {
+            Button(action: onToggleSelection) {
+                Image(systemName: isSelected ? "checkmark.square.fill" : "square")
+                    .foregroundColor(isSelected ? .blue : .secondary)
+                    .frame(width: 28, alignment: .center)
+            }
+            .buttonStyle(PlainButtonStyle())
+            
             // Place
             Text("\(place)")
                 .font(.system(.body, design: .monospaced))
@@ -653,6 +808,9 @@ struct EditableResultRowView: View {
                         .foregroundColor(displayRunner.runnerName.isEmpty ? .secondary : .primary)
                 }
             }
+            
+            GenderPicker(gender: genderBinding)
+                .frame(width: 56, alignment: .center)
         }
         .padding(.vertical, 8)
         .padding(.horizontal, 16)

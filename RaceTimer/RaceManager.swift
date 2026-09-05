@@ -63,6 +63,12 @@ class RaceManager: ObservableObject {
         currentRace = race
     }
     
+    func updateRunnerGender(for runnerIndex: Int, gender: Gender?) {
+        guard var race = currentRace, runnerIndex < race.runners.count else { return }
+        race.runners[runnerIndex].gender = gender
+        currentRace = race
+    }
+    
     func finishRace() {
         guard var race = currentRace else { return }
         
@@ -130,6 +136,34 @@ class RaceManager: ObservableObject {
         
         var updatedRace = races[raceIndex]
         updatedRace.runners[runnerIndex].runnerName = name
+        races[raceIndex] = updatedRace
+        saveRaces()
+    }
+    
+    func updateCompletedRaceRunnerGender(for raceId: UUID, runnerId: UUID, gender: Gender?) {
+        guard let raceIndex = races.firstIndex(where: { $0.id == raceId }),
+              let runnerIndex = races[raceIndex].runners.firstIndex(where: { $0.id == runnerId }) else {
+            return
+        }
+        
+        var updatedRace = races[raceIndex]
+        updatedRace.runners[runnerIndex].gender = gender
+        races[raceIndex] = updatedRace
+        saveRaces()
+    }
+    
+    func updateCompletedRaceRunnersGender(for raceId: UUID, runnerIds: Set<UUID>, gender: Gender) {
+        guard let raceIndex = races.firstIndex(where: { $0.id == raceId }), !runnerIds.isEmpty else {
+            return
+        }
+        
+        var updatedRace = races[raceIndex]
+        for runnerId in runnerIds {
+            guard let runnerIndex = updatedRace.runners.firstIndex(where: { $0.id == runnerId }) else {
+                continue
+            }
+            updatedRace.runners[runnerIndex].gender = gender
+        }
         races[raceIndex] = updatedRace
         saveRaces()
     }
@@ -506,12 +540,13 @@ class RaceManager: ObservableObject {
         startY: CGFloat,
         pageBottom: CGFloat
     ) -> CGFloat {
-        let headers = ["#", "Číslo", "Jméno", "Čas", "Tempo"]
+        let headers = ["#", "Číslo", "Jméno", "Pohlaví", "Čas", "Tempo"]
         let columnWidths: [CGFloat] = [
-            contentWidth * 0.08,
-            contentWidth * 0.14,
-            contentWidth * 0.34,
-            contentWidth * 0.22,
+            contentWidth * 0.07,
+            contentWidth * 0.12,
+            contentWidth * 0.28,
+            contentWidth * 0.10,
+            contentWidth * 0.21,
             contentWidth * 0.22
         ]
         let headerHeight: CGFloat = 28
@@ -574,6 +609,7 @@ class RaceManager: ObservableObject {
                 "\(index + 1)",
                 runner.runnerNumber.isEmpty ? "—" : runner.runnerNumber,
                 runner.runnerName.isEmpty ? "—" : runner.runnerName,
+                runner.gender?.rawValue ?? "—",
                 formatTimeForPDF(runner.finishTime, raceStartTime: race.raceStartTime),
                 formatPaceForPDF(runner.finishTime, raceStartTime: race.raceStartTime, distance: race.distance)
             ]

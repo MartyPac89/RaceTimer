@@ -67,13 +67,16 @@ struct RaceTimingView: View {
                 HStack {
                     Text("Place")
                         .font(.headline)
-                        .frame(width: 60, alignment: .center)
+                        .frame(width: 50, alignment: .center)
                     Text("Time")
                         .font(.headline)
                         .frame(maxWidth: .infinity, alignment: .center)
                     Text("Runner No.")
                         .font(.headline)
-                        .frame(width: 100, alignment: .center)
+                        .frame(width: 90, alignment: .center)
+                    Text("Gender")
+                        .font(.headline)
+                        .frame(width: 70, alignment: .center)
                 }
                 .padding(.vertical, 8)
                 .background(Color(.systemGray5))
@@ -87,6 +90,7 @@ struct RaceTimingView: View {
                                     finishTime: runner.finishTime,
                                     raceStartTime: displayedStartTime,
                                     runnerNumber: .constant(runner.runnerNumber),
+                                    gender: .constant(runner.gender),
                                     isRaceFinished: true
                                 )
                             }
@@ -98,6 +102,7 @@ struct RaceTimingView: View {
                                     finishTime: runner.finishTime,
                                     raceStartTime: raceManager.raceStartTime,
                                     runnerNumber: $runner.runnerNumber,
+                                    gender: $runner.gender,
                                     isRaceFinished: false
                                 )
                             }
@@ -436,6 +441,7 @@ struct RunnerRowView: View {
     let finishTime: Date?
     let raceStartTime: Date?
     @Binding var runnerNumber: String
+    @Binding var gender: Gender?
     let isRaceFinished: Bool
     
     private var displayTime: String {
@@ -452,7 +458,7 @@ struct RunnerRowView: View {
     var body: some View {
         HStack {
             Text("\(place)")
-                .frame(width: 60, alignment: .center)
+                .frame(width: 50, alignment: .center)
                 .font(.body)
             
             Text(displayTime)
@@ -461,12 +467,37 @@ struct RunnerRowView: View {
                 .foregroundColor(.secondary)
             
             TextField("No.", text: $runnerNumber)
-                .frame(width: 100, alignment: .center)
+                .frame(width: 90, alignment: .center)
                 .textFieldStyle(RoundedBorderTextFieldStyle())
                 .keyboardType(.numberPad)
                 .multilineTextAlignment(.center)
                 .disabled(isRaceFinished)
+            
+            GenderPicker(gender: $gender)
+                .frame(width: 70, alignment: .center)
+                .disabled(isRaceFinished)
         }
         .padding(.vertical, 5)
+    }
+}
+
+struct GenderPicker: View {
+    @Binding var gender: Gender?
+    
+    var body: some View {
+        Menu {
+            Button("F") { gender = .F }
+            Button("M") { gender = .M }
+            if gender != nil {
+                Button("Clear", role: .destructive) { gender = nil }
+            }
+        } label: {
+            Text(gender?.rawValue ?? "—")
+                .font(.body)
+                .fontWeight(.medium)
+                .frame(minWidth: 44, minHeight: 32)
+                .background(Color(.systemGray6))
+                .cornerRadius(6)
+        }
     }
 }
