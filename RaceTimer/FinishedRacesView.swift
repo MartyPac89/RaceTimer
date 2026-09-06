@@ -287,6 +287,16 @@ struct RaceDetailView: View {
                     
                     VStack(spacing: 10) {
                         if isEditMode {
+                            HStack(alignment: .top, spacing: 8) {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .foregroundColor(.orange)
+                                Text("Amend times only to correct an inaccurate record. Changing a time recalculates places and pace.")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            
                             HStack(spacing: 12) {
                                 Text(selectedRunnerIds.isEmpty
                                       ? "Select runners"
@@ -718,8 +728,12 @@ struct EditableResultRowView: View {
     @EnvironmentObject var raceManager: RaceManager
     @State private var editingRunnerNumber = false
     @State private var editingRunnerName = false
+    @State private var editingFinishTime = false
+    @State private var showingAmendTimeWarning = false
     @State private var tempRunnerNumber = ""
     @State private var tempRunnerName = ""
+    @State private var tempFinishTime = ""
+    @State private var timeInputError: String?
     
     // Get the current runner data from RaceManager to ensure we have the latest updates
     private var currentRunner: Runner? {
@@ -761,11 +775,45 @@ struct EditableResultRowView: View {
                 .frame(minWidth: 0, maxWidth: .infinity, alignment: .center)
                 .foregroundColor(placeColor)
             
-            // Time
-            Text(timeText)
-                .font(.system(.body, design: .monospaced))
-                .frame(minWidth: 0, maxWidth: .infinity, alignment: .center)
-                .foregroundColor(.primary)
+            // Time - Editable (with amend confirmation)
+            if editingFinishTime {
+                VStack(alignment: .center, spacing: 4) {
+                    HStack {
+                        TextField("MM:SS.hh", text: $tempFinishTime)
+                            .font(.system(.body, design: .monospaced))
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                            .keyboardType(.numbersAndPunctuation)
+                            .autocorrectionDisabled()
+                            .frame(minWidth: 0, maxWidth: .infinity, alignment: .center)
+                            .onSubmit {
+                                requestAmendFinishTime()
+                            }
+                        
+                        Button("Save") {
+                            requestAmendFinishTime()
+                        }
+                        .font(.caption)
+                        .foregroundColor(.orange)
+                    }
+                    
+                    if let timeInputError {
+                        Text(timeInputError)
+                            .font(.caption2)
+                            .foregroundColor(.red)
+                    }
+                }
+            } else {
+                Button(action: {
+                    editingFinishTime = true
+                    timeInputError = nil
+                    tempFinishTime = timeText == "—" ? "" : timeText
+                }) {
+                    Text(timeText)
+                        .font(.system(.body, design: .monospaced))
+                        .frame(minWidth: 0, maxWidth: .infinity, alignment: .center)
+                        .foregroundColor(.orange)
+                }
+            }
             
             // Pace
             Text(paceText)
@@ -849,17 +897,107 @@ struct EditableResultRowView: View {
         .padding(.vertical, 8)
         .padding(.horizontal, 16)
         .background(backgroundColor)
+        .alert("Amend Finish Time?", isPresented: $showingAmendTimeWarning) {
+            Button("Cancel", role: .cancel) { }
+            Button("Amend Time", role: .destructive) {
+                confirmAmendFinishTime()
+            }
+        } message: {
+            Text("Use this only to correct an inaccurate record. Places and pace will be recalculated. This change is saved immediately and cannot be undone.")
+        }
+    }
+    
+    private func requestAmendFinishTime() {
+        let trimmed = tempFinishTime.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let elapsed = parseElapsedTime(trimmed) else {
+            timeInputError = "Use MM:SS.hh"
+            return
+        }
+        
+        if let currentElapsed = currentElapsedSeconds, abs(currentElapsed - elapsed) < 0.005 {
+            editingFinishTime = false
+            timeInputError = nil
+            return
+        }
+        
+        timeInputError = nil
+        showingAmendTimeWarning = true
+    }
+    
+    private var currentElapsedSeconds: TimeInterval? {
+        guard let finishTime = displayRunner.finishTime,
+              let startTime = raceStartTime else {
+            return nil
+        }
+        return finishTime.timeIntervalSince(startTime)
+    }
+    
+    private func confirmAmendFinishTime() {
+        let trimmed = tempFinishTime.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let elapsed = parseElapsedTime(trimmed) else {
+            timeInputError = "Use MM:SS.hh"
+            return
+        }
+        
+        let didUpdate = raceManager.updateCompletedRaceRunnerFinishTime(
+            for: raceId,
+            runnerId: displayRunner.id,
+            elapsedSeconds: elapsed
+        )
+        
+        if didUpdate {
+            editingFinishTime = false
+            timeInputError = nil
+        } else {
+            timeInputError = "Could not update time"
+        }
+    }
+    
+    /// Parses display format `MM:SS.hh` (also accepts `M:SS`, `MM:SS`, optional hundredths).
+    private func parseElapsedTime(_ text: String) -> TimeInterval? {
+        let normalized = text
+            .replacingOccurrences(of: ",", with: ".")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty else { return nil }
+        
+        let parts = normalized.split(separator: ":", omittingEmptySubsequences: false)
+        guard parts.count == 2,
+              let minutes = Int(parts[0]),
+              minutes >= 0 else {
+            return nil
+        }
+        
+        let secondParts = parts[1].split(separator: ".", omittingEmptySubsequences: false)
+        guard let wholeSeconds = Int(secondParts[0]),
+              wholeSeconds >= 0,
+              wholeSeconds < 60 else {
+            return nil
+        }
+        
+        var hundredths = 0
+        if secondParts.count > 2 {
+            return nil
+        }
+        if secondParts.count == 2 {
+            let fraction = String(secondParts[1])
+            guard !fraction.isEmpty, fraction.allSatisfy(\.isNumber) else { return nil }
+            let padded = (fraction + "00").prefix(2)
+            guard let value = Int(padded) else { return nil }
+            hundredths = value
+        }
+        
+        return TimeInterval(minutes * 60 + wholeSeconds) + TimeInterval(hundredths) / 100.0
     }
     
     private var timeText: String {
-        guard let finishTime = runner.finishTime,
+        guard let finishTime = displayRunner.finishTime,
               let startTime = raceStartTime else {
-            print("DEBUG: Missing finishTime or startTime for runner \(runner.runnerName)")
+            print("DEBUG: Missing finishTime or startTime for runner \(displayRunner.runnerName)")
             return "—"
         }
         
         let elapsedTime = finishTime.timeIntervalSince(startTime)
-        print("DEBUG: Runner \(runner.runnerName) - finishTime: \(finishTime), startTime: \(startTime), elapsedTime: \(elapsedTime)")
+        print("DEBUG: Runner \(displayRunner.runnerName) - finishTime: \(finishTime), startTime: \(startTime), elapsedTime: \(elapsedTime)")
         
         let minutes = Int(elapsedTime) / 60
         let seconds = Int(elapsedTime) % 60
@@ -868,10 +1006,10 @@ struct EditableResultRowView: View {
     }
     
     private var paceText: String {
-        guard let finishTime = runner.finishTime,
+        guard let finishTime = displayRunner.finishTime,
               let startTime = raceStartTime,
               raceDistance > 0 else {
-            print("DEBUG: Pace calculation failed - finishTime: \(runner.finishTime != nil), startTime: \(raceStartTime != nil), distance: \(raceDistance)")
+            print("DEBUG: Pace calculation failed - finishTime: \(displayRunner.finishTime != nil), startTime: \(raceStartTime != nil), distance: \(raceDistance)")
             return "—"
         }
         

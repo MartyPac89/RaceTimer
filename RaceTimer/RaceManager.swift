@@ -168,6 +168,33 @@ class RaceManager: ObservableObject {
         saveRaces()
     }
     
+    /// Amends a completed runner's finish time from an elapsed interval (seconds since race start).
+    /// Recalculates finish places for the whole race. Returns false if the race/runner/start time is missing
+    /// or the elapsed value is invalid.
+    @discardableResult
+    func updateCompletedRaceRunnerFinishTime(for raceId: UUID, runnerId: UUID, elapsedSeconds: TimeInterval) -> Bool {
+        guard elapsedSeconds >= 0,
+              let raceIndex = races.firstIndex(where: { $0.id == raceId }),
+              let startTime = races[raceIndex].raceStartTime,
+              let runnerIndex = races[raceIndex].runners.firstIndex(where: { $0.id == runnerId }) else {
+            return false
+        }
+        
+        var updatedRace = races[raceIndex]
+        updatedRace.runners[runnerIndex].finishTime = startTime.addingTimeInterval(elapsedSeconds)
+        
+        let sortedRunners = updatedRace.sortedRunners
+        for (index, runner) in sortedRunners.enumerated() {
+            if let placeIndex = updatedRace.runners.firstIndex(where: { $0.id == runner.id }) {
+                updatedRace.runners[placeIndex].finishPlace = index + 1
+            }
+        }
+        
+        races[raceIndex] = updatedRace
+        saveRaces()
+        return true
+    }
+    
     enum ExportListFilter {
         case all
         case women
